@@ -110,6 +110,23 @@ jobs:
       image: ${{ matrix.image }}
 
     steps:
+      ## Drop docker-clean which wipes /var/cache/apt/archives
+      ## after every install; keep downloaded debs so the
+      ## cache action can save them.
+      - name: Configure apt to keep downloaded debs
+        run: |
+          rm -f /etc/apt/apt.conf.d/docker-clean
+          printf '%s\n' 'Binary::apt::APT::Keep-Downloaded-Packages "true";' \
+              > /etc/apt/apt.conf.d/keep-cache
+
+      - name: Cache apt packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-lint-${{ matrix.image }}-${{ hashFiles('.github/workflows/lint.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-lint-${{ matrix.image }}-
+
       - name: Install git for actions/checkout
         ## Minimal container images do not ship git but actions/checkout
         ## needs it to populate '.git/'. Inline because checkout has not
