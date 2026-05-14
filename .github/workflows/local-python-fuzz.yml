@@ -94,6 +94,13 @@ jobs:
       ## ClusterFuzzLite stores corpora / crashes via actions/cache,
       ## which needs neither contents:write nor actions:write -
       ## contents:read covers cache reads.
+      ## See developer-meta-files/agents/github-actions.md G-A-007
+      ## (cache poisoning). Cache payload here is fuzz corpora -
+      ## inputs to the fuzzer, not code or binaries, so a
+      ## poisoned entry produces weird seeds, not RCE. GitHub
+      ## branch-scopes the cache (PR caches cannot reach master),
+      ## the PR job is fork-gated, and this batch job runs only
+      ## on schedule / workflow_dispatch.
     steps:
       - name: Checkout repository
         ## https://github.com/actions/checkout/releases/tag/v6.0.2
