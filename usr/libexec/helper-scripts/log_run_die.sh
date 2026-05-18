@@ -232,6 +232,40 @@ log_run() {
 }
 
 
+## Run a command quietly on success, verbosely on failure. Logs the
+## command at 'info' before running. Captures stdout+stderr and emits
+## them (to stderr) only when the command exits non-zero. Returns the
+## command's exit code unchanged.
+##
+## usage: output_on_failure cmd [arg ...]
+output_on_failure() {
+  local rc output command_without_extraneous_spaces_temp command_without_extraneous_spaces
+
+  if [ "$#" -lt 1 ]; then
+    log error "output_on_failure: no command given"
+    return 64
+  fi
+
+  ## Local 'set +x' so xtrace traces don't end up inside the captured
+  ## output. 'local -' restores the prior option on return.
+  local -
+  set +x
+
+  printf -v command_without_extraneous_spaces_temp '%q ' "${@}"
+  command_without_extraneous_spaces="$(printf '%s\n' "${command_without_extraneous_spaces_temp}")"
+  log info "Command executing (output suppressed unless it fails): $ ${command_without_extraneous_spaces}"
+
+  rc=0
+  output="$("${@}" 2>&1)" || rc=$?
+
+  if [ "${rc}" -ne 0 ]; then
+    printf '%s\n' "${output}" >&2
+  fi
+
+  return "${rc}"
+}
+
+
 ## Useful to get runtime mid run to log easily
 ## Variable to define outside: start_time
 # shellcheck disable=SC2154
