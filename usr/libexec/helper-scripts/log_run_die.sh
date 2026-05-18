@@ -232,13 +232,13 @@ log_run() {
 }
 
 
-output_on_failure() {
+log_run_silent_if_success() {
   local rc output
 
   local -
   set +x
 
-  log info "Command executing (output suppressed unless it fails): $ ${*}"
+  log info "${FUNCNAME[0]}: $ ${*}"
 
   rc=0
   output="$("${@}" 2>&1)" || rc=$?
