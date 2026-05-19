@@ -84,7 +84,10 @@ def main():
                     f"Error while reading file '{orig_file_path}'!"
                 )
         if executable_name == "append-once":
-            if line_to_append in file_contents:
+            if line_to_append == "":
+                if file_contents.endswith("\n"):
+                    sys.exit(0)
+            elif line_to_append in file_contents:
                 print_info(f"Line already exists in: '{orig_file_path}'")
                 sys.exit(0)
         if not os.access(file_path, os.W_OK):
@@ -103,15 +106,18 @@ def main():
     else:
         print_info(f"Appending data to: '{orig_file_path}'")
 
-    if file_contents != "" and file_contents[-1] != "\n":
-        # Fix a missing terminating newline. Some text editors will fail to
-        # write these properly and it will break our line appending if we don't
-        # correct it first.
+    if line_to_append == "":
         file_contents += "\n"
-    if line_to_append != "" and line_to_append[-1] != "\n":
-        # Make sure we add a terminating newline ourselves too :)
-        line_to_append += "\n"
-    file_contents += line_to_append
+    else:
+        if file_contents != "" and file_contents[-1] != "\n":
+            # Fix a missing terminating newline. Some text editors will fail to
+            # write these properly and it will break our line appending if we
+            # don't correct it first.
+            file_contents += "\n"
+        if line_to_append[-1] != "\n":
+            # Make sure we add a terminating newline ourselves too :)
+            line_to_append += "\n"
+        file_contents += line_to_append
 
     temp_file = None
     try:
