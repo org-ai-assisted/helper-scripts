@@ -52,11 +52,14 @@ decide() {
   )
 }
 
-printf '%s\n' "=== gate: circuit_confirmed_backward_proceed (default, no flag) ==="
-chk "fast + circuit    -> proceed" "proceed" "$(decide fast 1)"
-chk "fast + NO-circuit -> wait" "wait" "$(decide fast 0)"
-chk "slow + circuit    -> wait" "wait" "$(decide slow 1)"
-chk "ok + circuit      -> wait" "wait" "$(decide ok 1)"
+printf '%s\n' "=== gate: circuit_confirmed_backward_proceed (circuit alone) ==="
+## A built circuit => proceed, regardless of the consensus verdict.
+chk "circuit + fast -> proceed" "proceed" "$(decide fast 1)"
+chk "circuit + slow -> proceed" "proceed" "$(decide slow 1)"
+chk "circuit + ok   -> proceed" "proceed" "$(decide ok 1)"
+## No circuit => wait (anondate / retry), whatever the verdict.
+chk "no-circuit + fast -> wait" "wait" "$(decide fast 0)"
+chk "no-circuit + ok   -> wait" "wait" "$(decide ok 0)"
 
 printf '%s\n' "--------------------------------------------------"
 printf 'RESULT: %s passed, %s failed\n' "${PASS}" "${FAIL}"

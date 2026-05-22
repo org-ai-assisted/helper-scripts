@@ -331,18 +331,19 @@ anondate_use() {
 }
 
 circuit_confirmed_backward_proceed() {
-   ## Success (0) => proceed (let sdwdate correct a "fast" clock over a
-   ## real circuit) instead of waiting on forward-only anondate. Default
-   ## behavior: a clock that is only "fast" per the Tor consensus (not
-   ## below the replay floor / not wildly wrong - those are handled
-   ## above) is allowed to proceed PROVIDED a real Tor circuit is
-   ## established. sdwdate then corrects the clock over real circuits -
-   ## its fetch takes the median of the onion source pool and never sets
-   ## below the replay floor, so the backward correction is "confirmed
-   ## by a real circuit". anondate itself stays forward-only (it runs
-   ## before any circuit exists, so it cannot confirm a backward move).
-   ## Pure decision over globals, kept separate so it can be unit-tested.
-   [ "$clock_tor_consensus_check_result" = "fast" ] || return 1
+   ## Success (0) => proceed (let sdwdate fetch the time over real
+   ## circuits and correct the clock) instead of waiting on forward-only
+   ## anondate. A real Tor circuit being established already proves Tor
+   ## accepted a reasonably-live consensus and built working paths, so
+   ## the clock is within Tor's tolerance and sdwdate can fetch the true
+   ## time and correct it (forward OR backward) - the consensus
+   ## fast/slow/ok sub-verdict does not matter once a circuit exists.
+   ## sdwdate's fetch is median-of-pool + replay-floor gated; in the
+   ## stale-consensus case its per-source check rejects the times and it
+   ## simply retries, so this cannot mis-set the clock (proven by
+   ## ci/tor-clock-sim/tier2/run-stale-consensus-test.sh). anondate
+   ## (which runs before any circuit) stays forward-only. Kept as a
+   ## function so it can be unit-tested.
    [ "$tor_circuit_established" = "1" ] || return 1
    return 0
 }
@@ -405,21 +406,21 @@ te_pe_tb_check() {
       #exit "$exit_code"
    fi
 
-   ## Backward only when a real circuit confirms it. A clock that is
-   ## merely "fast" per the consensus (not below the replay floor / not
-   ## wildly wrong - those are handled above) is allowed to proceed IF a
-   ## Tor circuit is established, so sdwdate can correct it over real
-   ## circuits (pool median, replay-floor gated). In the benign
-   ## dual-boot case the consensus is fresh and sdwdate sets the clock
-   ## back to the correct time; in the stale-cached-consensus case
-   ## sdwdate's per-source sanity check rejects the (correct) times and
-   ## it simply retries - no backward set happens.
+   ## Correct via a real circuit whenever one is established. A built
+   ## circuit proves the clock is within Tor's tolerance, so let sdwdate
+   ## fetch the true time over real circuits and correct it (forward or
+   ## backward; pool median, replay-floor gated) - regardless of the
+   ## consensus fast/slow/ok sub-verdict. The wildly-wrong / below-floor
+   ## case is handled above; the stale-consensus case rejects per source
+   ## and just retries (no wrong set). anondate (pre-circuit) stays
+   ## forward-only.
    if circuit_confirmed_backward_proceed; then
-      output_cmd "INFO: Clock is 'fast' per the Tor consensus, but a Tor \
-circuit is established. \
-Proceeding so sdwdate can correct the clock over real circuits (median \
-of the onion source pool, never below the replay floor). anondate \
-remains forward-only."
+      output_cmd "INFO: A Tor circuit is established, so the clock is \
+within Tor's tolerance. \
+Proceeding so sdwdate can fetch the time over real circuits and correct \
+it (median of the onion source pool, never below the replay floor); the \
+consensus fast/slow verdict does not matter once a circuit exists. \
+anondate remains forward-only."
       exit_code=0
       exit "$exit_code"
    fi
