@@ -72,27 +72,32 @@ ensure_all_nodes_running() {
 ## circuit-established via the client control port (cookie auth), the
 ## same GETINFO that tor-circuit-established-check uses.
 circuit_established() {
-  python3 - "$1" <<'PY' 2>/dev/null
+  python3 - "$1" <<'PY'
 import sys
-from stem.control import Controller
 try:
-    with Controller.from_port(address="127.0.0.1", port=int(sys.argv[1])) as c:
+    from stem.control import Controller
+    with Controller.from_port(
+        address="127.0.0.1", port=int(sys.argv[1])
+    ) as c:
         c.authenticate()
-        sys.stdout.write(c.get_info("status/circuit-established"))
-except Exception:
-    sys.stdout.write("err")
+        val = c.get_info("status/circuit-established")
+        sys.stdout.write(val if val else "empty")
+except Exception as exc:
+    sys.stdout.write("err:" + type(exc).__name__)
 PY
 }
 
 fetch() {  ## $1 socksport $2 url -> unixtime or empty
-  timeout 45 "${URL2UT}" 127.0.0.1 "$1" "$2" false 2>/dev/null
+  ## Run url_to_unixtime under the python3 that has requests/PySocks
+  ## (its #! may point at a different interpreter without them).
+  timeout 45 python3 "${URL2UT}" 127.0.0.1 "$1" "$2" false 2>/dev/null
 }
 
 main() {
   command -v "${CHUTNEY_TOR}" >/dev/null || fail "tor missing"
   [ -x "${URL2UT}" ] || fail "url_to_unixtime not at ${URL2UT}"
-  python3 -c "import stem, socks" 2>/dev/null ||
-    fail "python3 stem/PySocks missing"
+  python3 -c "import stem, socks, requests, dateutil" 2>/dev/null ||
+    fail "python3 stem/PySocks/requests/dateutil missing"
 
   mkdir -p "${WORK}"
   [ -d "${CHUTNEY}" ] || git clone --depth 1 \
