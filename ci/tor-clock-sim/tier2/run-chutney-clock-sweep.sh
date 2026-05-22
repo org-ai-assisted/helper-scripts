@@ -146,12 +146,23 @@ main() {
   done
 
   log "RESULTS: real tor ${CHUTNEY_TOR##*/} client bootstrap vs clock offset"
-  printf '  %8s | %s\n' "offset" "bootstraps?"
+  ## Probe every offset in PARALLEL. Each client has its own datadir
+  ## and uses SocksPort/ControlPort auto, so there are no conflicts;
+  ## the sweep then costs ~one client timeout instead of their sum.
   local off
+  local pids=()
+  for off in ${OFFSETS_HOURS}; do
+    { client_bootstraps_at_offset "${off}" \
+        >"${WORK_DIR}/result_${off}" 2>/dev/null; } &
+    pids+=("$!")
+  done
+  wait "${pids[@]}" 2>/dev/null || true
+
+  printf '  %8s | %s\n' "offset" "bootstraps?"
   for off in ${OFFSETS_HOURS}; do
     local sign="+"; [ "${off#-}" != "${off}" ] && sign=""
-    printf '  %8s | %s\n' \
-      "${sign}${off}h" "$(client_bootstraps_at_offset "${off}")"
+    printf '  %8s | %s\n' "${sign}${off}h" \
+      "$(cat "${WORK_DIR}/result_${off}" 2>/dev/null || printf 'ERR')"
   done
 
   log "teardown"
