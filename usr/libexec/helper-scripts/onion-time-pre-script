@@ -330,6 +330,38 @@ anondate_use() {
    exit "$exit_code"
 }
 
+read_allow_circuit_confirmed_backward() {
+   ## Opt-in, default off. When enabled, a clock that is only "fast"
+   ## per the Tor consensus does NOT keep sdwdate waiting here, PROVIDED
+   ## a real Tor circuit is established. sdwdate is then allowed to
+   ## proceed and correct the clock over real circuits - its fetch takes
+   ## the median of the onion source pool and never sets below the
+   ## replay floor, so a backward correction is "confirmed by a real
+   ## circuit". anondate itself stays forward-only (it runs before any
+   ## circuit exists, so it has nothing to confirm a backward move).
+   allow_circuit_confirmed_backward="false"
+   local conf
+   for conf in /etc/sdwdate.d/*.conf; do
+      [ -e "$conf" ] || continue
+      if grep -qsE '^ALLOW_CIRCUIT_CONFIRMED_BACKWARD=true' "$conf"; then
+         allow_circuit_confirmed_backward="true"
+      fi
+      if grep -qsE '^ALLOW_CIRCUIT_CONFIRMED_BACKWARD=false' "$conf"; then
+         allow_circuit_confirmed_backward="false"
+      fi
+   done
+}
+
+circuit_confirmed_backward_proceed() {
+   ## Success (0) => proceed (let sdwdate correct a "fast" clock over a
+   ## real circuit) instead of waiting. Pure decision over globals, kept
+   ## separate so it can be unit-tested.
+   [ "$clock_tor_consensus_check_result" = "fast" ] || return 1
+   [ "$allow_circuit_confirmed_backward" = "true" ] || return 1
+   [ "$tor_circuit_established" = "1" ] || return 1
+   return 0
+}
+
 te_pe_tb_check() {
    ## For better look inside sdwdate log viewer.
    printf '\n'
@@ -339,6 +371,8 @@ te_pe_tb_check() {
    anondate_folder
 
    detect_vm_type
+
+   read_allow_circuit_confirmed_backward
 
    onion_time_script_status
 
@@ -388,6 +422,25 @@ te_pe_tb_check() {
       #exit "$exit_code"
    fi
 
+   ## Backward only when a real circuit confirms it (opt-in). A clock
+   ## that is merely "fast" per the consensus (not below the replay
+   ## floor / not wildly wrong - those are handled above) is allowed to
+   ## proceed IF a Tor circuit is established, so sdwdate can correct it
+   ## over real circuits (pool median, replay-floor gated). In the
+   ## benign dual-boot case the consensus is fresh and sdwdate sets the
+   ## clock back to the correct time; in the stale-cached-consensus case
+   ## sdwdate's per-source sanity check rejects the (correct) times and
+   ## it simply retries - no backward set happens. Default off.
+   if circuit_confirmed_backward_proceed; then
+      output_cmd "INFO: Clock is 'fast' per the Tor consensus, but a Tor \
+circuit is established and ALLOW_CIRCUIT_CONFIRMED_BACKWARD=true. \
+Proceeding so sdwdate can correct the clock over real circuits (median \
+of the onion source pool, never below the replay floor). anondate \
+remains forward-only."
+      exit_code=0
+      exit "$exit_code"
+   fi
+
    if [ ! "$clock_tor_consensus_check_result" = "ok" ]; then
       anondate_use
       ## Time incorrect but not by giant amounts.
@@ -404,4 +457,8 @@ te_pe_tb_check() {
    exit "$exit_code"
 }
 
-te_pe_tb_check "$@"
+## Only auto-run when executed, not when sourced (so the decision
+## helpers above can be unit-tested).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+   te_pe_tb_check "$@"
+fi
