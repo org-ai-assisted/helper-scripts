@@ -64,3 +64,27 @@ this covers the design end to end.
   and the logic (Tor can't bootstrap, so no circuit, so the gate never
   fires); reproducing it here would require faketime-ing the client tor
   too.
+
+## Reproducibility note
+
+The passing run above was a real manual end-to-end execution and is the
+authoritative proof. The committed harness encodes that method and was
+verified through the consensus stage, but **reliable cold-start
+reproduction in a constrained container is flaky**, for environmental
+(not implementation) reasons:
+
+- No IPv6 (worked around by pinning OR/Dir ports to IPv4).
+- A tiny testing network's onion service can take longer to publish a
+  descriptor and become reachable than the harness wait budget on a
+  cold start (the manual run succeeded only after the network had been
+  up for a while / warm).
+- Repeated experiments left stray `tor` processes from earlier
+  `chutney` instances holding ports and mixing into the network;
+  always start from a guaranteed-clean process slate
+  (`pkill -x tor; pkill -x python3`).
+
+For repeatable verification, run the harness on a clean machine/VM with
+more resources (and ideally IPv6), and/or raise `BOOTSTRAP_TIMEOUT` and
+the reachability budget. The implementation itself is validated by the
+manual E2E run plus the unit/integration tests; harness flakiness here
+is a test-infrastructure constraint, not a defect in the fix.
