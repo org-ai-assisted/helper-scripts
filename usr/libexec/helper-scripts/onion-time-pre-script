@@ -330,25 +330,62 @@ anondate_use() {
    exit "$exit_code"
 }
 
+determine_circuit_confirmed() {
+   ## Sets: circuit_confirmed ("1" => a real circuit is confirmed)
+   ##
+   ## Gateway / other: actively build one fresh circuit (EXTENDCIRCUIT 0,
+   ## Tor's own path selection - no named clearnet or onion destination, so
+   ## no single point of centralization) and require it to reach BUILT.
+   ## This is non-stale by construction, unlike the sticky
+   ## status/circuit-established flag, which can read 1 long after the paths
+   ## it referred to are gone - a false positive even for general (not just
+   ## onion) circuits - see tor-circuit-established-check for refs.
+   ##
+   ## Workstation: it reaches Tor only through onion-grater, which does not
+   ## (and should not) permit EXTENDCIRCUIT, and its clock correction
+   ## depends on the gateway's Tor anyway (the gateway's own sdwdate runs
+   ## this same active build). So the workstation defers to the gateway and
+   ## falls back to status/circuit-established here.
+   if [ "$VM" = "Workstation" ]; then
+      circuit_confirmed="$tor_circuit_established"
+      output_cmd "Circuit confirmation: workstation defers to gateway Tor; \
+status/circuit-established = '$tor_circuit_established'."
+      return 0
+   fi
+
+   ## sets: tor_circuit_built_check_exit_code
+   ## sets: tor_circuit_built_output
+   check_tor_circuit_built ## tor_bootstrap_check.bsh
+
+   if [ "$tor_circuit_built_check_exit_code" = "0" ]; then
+      circuit_confirmed="1"
+   else
+      circuit_confirmed="0"
+   fi
+   output_cmd "Circuit confirmation: active build exit_code \
+'$tor_circuit_built_check_exit_code' => circuit_confirmed='$circuit_confirmed'. \
+($tor_circuit_built_output)"
+}
+
 circuit_confirmed_backward_proceed() {
-   ## Success (0) => proceed (let sdwdate fetch the time over real
-   ## circuits and correct the clock) instead of waiting on forward-only
-   ## anondate. A real Tor circuit being established already proves Tor
-   ## accepted a reasonably-live consensus, so the clock is within Tor's
-   ## tolerance and sdwdate can fetch the true time and correct it
-   ## (forward OR backward) - the consensus fast/slow/ok sub-verdict does
-   ## not matter once a circuit exists. (status/circuit-established is a
-   ## sticky flag that can be a stale false positive even for general
-   ## circuits - see tor-circuit-established-check for refs; safe here
-   ## because the fetch is the real probe, so a false positive only costs
-   ## a retry, never a wrong set.)
-   ## sdwdate's fetch is median-of-pool + replay-floor gated; in the
+   ## Success (0) => proceed (let sdwdate fetch the time over real circuits
+   ## and correct the clock) instead of waiting on forward-only anondate. A
+   ## real, freshly built Tor circuit proves Tor accepted a reasonably-live
+   ## consensus, so the clock is within Tor's tolerance and sdwdate can
+   ## fetch the true time and correct it (forward OR backward) - the
+   ## consensus fast/slow/ok sub-verdict does not matter once a circuit
+   ## exists.
+   ## Confirmation is established by determine_circuit_confirmed: an active
+   ## EXTENDCIRCUIT-to-BUILT on the gateway (non-stale), or the sticky
+   ## status/circuit-established flag on the workstation (which defers to
+   ## the gateway). Even a false positive is safe: sdwdate's fetch is the
+   ## real probe (median-of-pool + replay-floor gated); in the
    ## stale-consensus case its per-source check rejects the times and it
    ## simply retries, so this cannot mis-set the clock (proven by
-   ## ci/tor-clock-sim/tier2/run-stale-consensus-test.sh). anondate
-   ## (which runs before any circuit) stays forward-only. Kept as a
-   ## function so it can be unit-tested.
-   [ "$tor_circuit_established" = "1" ] || return 1
+   ## ci/tor-clock-sim/tier2/run-stale-consensus-test.sh). anondate (which
+   ## runs before any circuit) stays forward-only. Kept as a pure function
+   ## over $circuit_confirmed so it can be unit-tested.
+   [ "$circuit_confirmed" = "1" ] || return 1
    return 0
 }
 
@@ -410,7 +447,7 @@ te_pe_tb_check() {
       #exit "$exit_code"
    fi
 
-   ## Correct via a real circuit whenever one is established. A built
+   ## Correct via a real circuit whenever one is confirmed. A freshly built
    ## circuit proves the clock is within Tor's tolerance, so let sdwdate
    ## fetch the true time over real circuits and correct it (forward or
    ## backward; pool median, replay-floor gated) - regardless of the
@@ -418,8 +455,10 @@ te_pe_tb_check() {
    ## case is handled above; the stale-consensus case rejects per source
    ## and just retries (no wrong set). anondate (pre-circuit) stays
    ## forward-only.
+   ## sets: circuit_confirmed
+   determine_circuit_confirmed
    if circuit_confirmed_backward_proceed; then
-      output_cmd "INFO: A Tor circuit is established, so the clock is \
+      output_cmd "INFO: A Tor circuit is confirmed, so the clock is \
 within Tor's tolerance. \
 Proceeding so sdwdate can fetch the time over real circuits and correct \
 it (median of the onion source pool, never below the replay floor); the \

@@ -179,6 +179,23 @@ check_tor_circuit_established() {
    fi
 }
 
+check_tor_circuit_built() {
+   ## Active, non-stale alternative to check_tor_circuit_established: build
+   ## one fresh circuit (EXTENDCIRCUIT 0, Tor's own path selection) and wait
+   ## for it to reach BUILT. Unlike the sticky status/circuit-established
+   ## flag, a BUILT result cannot be a stale false positive. Runs via
+   ## leaprun (TargetUser debian-tor); the privleap action passes its own
+   ## short timeout so it returns cleanly inside the leaprun timeout window.
+   check_bootstrap_helper_script="tor-circuit-built-check"
+
+   ## sets: check_bootstrap_helper_script_exit_code
+   ## sets: check_bootstrap_helper_script_output
+   check_tor_bootstrap_helper_run_helper_script
+
+   tor_circuit_built_check_exit_code="$check_bootstrap_helper_script_exit_code"
+   tor_circuit_built_output="$check_bootstrap_helper_script_output"
+}
+
 tor_consensus_valid-after() {
    check_bootstrap_helper_script="tor-consensus-valid-after"
 
