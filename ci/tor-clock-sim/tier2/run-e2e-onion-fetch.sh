@@ -99,9 +99,20 @@ main() {
       printf '%s\n' "AddressDisableIPv6 1" >>"${f}"
   done
 
-  log "launch nodes"
+  ## Clean slate: stray tor/http from earlier runs hold ports and mix
+  ## into the network (the onion then fails to publish). Kill by exact
+  ## process name (never 'pkill -f <pat>' from a shell whose own command
+  ## line contains <pat> - it would match itself).
+  log "launch nodes (clean slate first)"
   pkill -x tor 2>/dev/null
+  pkill -9 -x tor 2>/dev/null
+  local p
+  for p in $(pgrep -x python3 2>/dev/null); do
+    grep -aqs "http.server" "/proc/${p}/cmdline" 2>/dev/null && kill "${p}"
+  done
   sleep 2
+  [ "$(pgrep -cx tor 2>/dev/null)" = "0" ] ||
+    fail "stray tor processes survived cleanup; aborting"
   ./chutney start "${NETWORK}" >/dev/null 2>&1
   ensure_all_nodes_running
 
