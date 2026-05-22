@@ -39,7 +39,10 @@ NETWORK="${NETWORK:-networks/basic-min}"
 ## predicts builds within roughly [-24h, +27h] for C-Tor.
 OFFSETS_HOURS="${OFFSETS_HOURS:--48 -24 -6 0 6 24 27 30 48}"
 BOOTSTRAP_TIMEOUT="${BOOTSTRAP_TIMEOUT:-180}"
-CLIENT_TIMEOUT="${CLIENT_TIMEOUT:-75}"
+## Max seconds to wait for a client to bootstrap. A client whose clock
+## is outside tolerance never bootstraps, so this only bounds the
+## failure case; successful clients are detected and killed early.
+CLIENT_TIMEOUT="${CLIENT_TIMEOUT:-45}"
 
 export CHUTNEY_TOR CHUTNEY_TOR_GENCERT
 
@@ -94,16 +97,27 @@ client_bootstraps_at_offset() {
   local faked
   faked="$(date -u -d "${off} hours" '+%Y-%m-%d %H:%M:%S')"
   ## Do not fake the monotonic clock or tor's internal timers break.
+  ## Run in the background and kill as soon as it bootstraps - tor is a
+  ## daemon and would otherwise sit until CLIENT_TIMEOUT even on
+  ## success, making the whole sweep needlessly slow.
   FAKETIME_DONT_FAKE_MONOTONIC=1 \
-    timeout "${CLIENT_TIMEOUT}" \
     faketime "${faked}" \
-    "${CHUTNEY_TOR}" -f "${cdir}/torrc" >/dev/null 2>&1 || true
+    "${CHUTNEY_TOR}" -f "${cdir}/torrc" >/dev/null 2>&1 &
+  local pid="$!"
 
-  if grep -aq "Bootstrapped 100%" "${cdir}/notice.log" 2>/dev/null; then
-    printf '%s\n' "YES"
-  else
-    printf '%s\n' "NO"
-  fi
+  local result="NO" waited=0
+  while [ "${waited}" -lt "${CLIENT_TIMEOUT}" ]; do
+    if grep -aq "Bootstrapped 100%" "${cdir}/notice.log" 2>/dev/null
+    then
+      result="YES"; break
+    fi
+    kill -0 "${pid}" 2>/dev/null || break  ## tor died
+    sleep 1
+    waited=$((waited + 1))
+  done
+  kill "${pid}" 2>/dev/null || true
+  wait "${pid}" 2>/dev/null || true
+  printf '%s\n' "${result}"
 }
 
 main() {
