@@ -30,7 +30,9 @@ from tor_clock_sim import (  # noqa: E402
     CTOR,
     Consensus,
     circuit_gated_nudge,
+    consensus_only_nudge,
     honest_network,
+    rollback_attack,
     with_attackers,
 )
 
@@ -193,6 +195,59 @@ class FloorInvariantTest(unittest.TestCase):
                         ## A commit only ever moves the clock backward
                         ## toward (never below) the proposed target.
                         self.assertLessEqual(res.clock, clock)
+
+
+class RelaxationTest(unittest.TestCase):
+    """Relaxing anondate to fix fast clocks, and the rollback attack
+    surface when consensus downloads pass but circuits are blocked."""
+
+    def test_consensus_only_fixes_fast_clock_under_block(self) -> None:
+        net = honest_network(REAL_NOW)
+        net.block = True
+        fast = REAL_NOW + 12 * HOUR
+        fresh = Consensus(valid_after=REAL_NOW)
+        ## consensus_only fixes it without a circuit ...
+        relaxed = consensus_only_nudge(fast, FLOOR, fresh, net, CTOR)
+        self.assertTrue(relaxed.committed)
+        self.assertLess(relaxed.clock, fast)
+        ## ... while circuit_gated cannot (circuits are blocked).
+        gated = circuit_gated_nudge(fast, FLOOR, fresh, net, CTOR)
+        self.assertFalse(gated.committed)
+
+    def test_safe_modes_zero_rollback_under_block(self) -> None:
+        fast = REAL_NOW + 12 * HOUR
+        for mode in ("forward_only", "circuit_gated"):
+            net = honest_network(REAL_NOW)
+            rollback, steps = rollback_attack(
+                mode, fast, FLOOR, net, CTOR, True, False
+            )
+            self.assertEqual(rollback, 0)
+            self.assertEqual(steps, 0)
+
+    def test_consensus_only_rolls_back_to_floor(self) -> None:
+        ## With no floor ratchet (circuits blocked => no sync to write
+        ## the floor), the clock walks all the way to the replay floor.
+        fast = REAL_NOW + 12 * HOUR
+        build_floor = REAL_NOW - 120 * DAY
+        net = honest_network(REAL_NOW)
+        rollback, steps = rollback_attack(
+            "consensus_only", fast, build_floor, net, CTOR, True, False
+        )
+        self.assertGreater(rollback, 100 * DAY)
+        self.assertGreater(steps, 50)
+
+    def test_floor_ratchet_would_cap_rollback(self) -> None:
+        ## If a circuit-using sync could ratchet the floor, rollback is
+        ## capped at ~one acceptance window (but that ratchet is not
+        ## available while circuits are blocked).
+        fast = REAL_NOW + 12 * HOUR
+        build_floor = REAL_NOW - 120 * DAY
+        net = honest_network(REAL_NOW)
+        rollback, steps = rollback_attack(
+            "consensus_only", fast, build_floor, net, CTOR, True, True
+        )
+        self.assertLessEqual(steps, 1)
+        self.assertLess(rollback, 2 * DAY)
 
 
 if __name__ == "__main__":

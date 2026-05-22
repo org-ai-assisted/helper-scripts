@@ -36,7 +36,9 @@ from tor_clock_sim import (  # noqa: E402
     Consensus,
     Impl,
     circuit_gated_nudge,
+    consensus_only_nudge,
     honest_network,
+    rollback_attack,
     with_attackers,
 )
 
@@ -183,6 +185,56 @@ def sim6_end_to_end() -> None:
     )
 
 
+def sim7_relaxation() -> None:
+    print("\nSIM 7 - Relaxing anondate to fix FAST clocks")
+    print("  Scenario: consensus download PASSES, circuits BLOCKED.")
+    floor_recent = NOW - 2 * DAY  ## a running machine
+    floor_build = NOW - 120 * DAY  ## fresh install ~4-month baseline
+    fast = NOW + 12 * HOUR  ## within tor's +-24h, past sdwdate's ~3h gate
+    fresh = Consensus(valid_after=NOW)
+
+    print("\n  (a) Benign +12h fast clock, honest fresh consensus:")
+    blocked = honest_network(NOW)
+    blocked.block = True
+    for name, fn in (
+        ("circuit_gated ", circuit_gated_nudge),
+        ("consensus_only", consensus_only_nudge),
+    ):
+        res = fn(fast, floor_recent, fresh, blocked, CTOR)
+        if res.committed:
+            outcome = "FIXED to " + fmt(res.clock - NOW)
+        else:
+            outcome = "not fixed (" + res.reason + ")"
+        print(f"      {name}: {outcome}")
+    print("    => only consensus_only fixes it while circuits are")
+    print("       blocked; circuit_gated has no circuit to confirm.")
+
+    print("\n  (b) Attack surface (CTOR), stale consensus + circuits")
+    print("      blocked. ratchet=False (floor-write needs a circuit):")
+    print(f"      {'mode':>14} | {'recent floor':>13} | {'build floor':>11}")
+    for mode in ("forward_only", "circuit_gated", "consensus_only"):
+        net = honest_network(NOW)
+        rb_r, _ = rollback_attack(
+            mode, fast, floor_recent, net, CTOR, True, False
+        )
+        net = honest_network(NOW)
+        rb_b, _ = rollback_attack(
+            mode, fast, floor_build, net, CTOR, True, False
+        )
+        print(f"      {mode:>14} | {fmt(rb_r):>13} | {fmt(rb_b):>11}")
+    print("    => consensus_only walks the clock to the replay floor")
+    print("       (~months on a fresh install); the others give 0.")
+
+    print("\n  (c) If a circuit-using sync COULD ratchet the floor:")
+    net = honest_network(NOW)
+    rb, steps = rollback_attack(
+        "consensus_only", fast, floor_build, net, CTOR, True, True
+    )
+    print(f"      consensus_only: {fmt(rb)} in {steps} step(s)")
+    print("    => capped at ~one acceptance window - but ratcheting is")
+    print("       NOT available while circuits are blocked.")
+
+
 def main() -> None:
     print("=" * 64)
     print("Tier-1 Tor-clock simulations (MODEL, not real Tor)")
@@ -198,6 +250,7 @@ def main() -> None:
     sim4_fetch_staler_loop()
     sim5_deep_rollback()
     sim6_end_to_end()
+    sim7_relaxation()
     print("\n" + "=" * 64)
     print("All scenarios ran. Assertions live in test_tor_clock_sim.py.")
     print("Confirm real thresholds with Shadow (Tier 2, README.md).")

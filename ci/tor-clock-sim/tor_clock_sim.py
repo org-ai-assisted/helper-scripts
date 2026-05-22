@@ -196,6 +196,86 @@ def circuit_gated_nudge(
     return NudgeResult(clock, floor, False, "no-circuit-revert")
 
 
+def consensus_only_nudge(
+    clock: int,
+    floor: int,
+    cons: Consensus,
+    net: Network,
+    impl: Impl,
+) -> NudgeResult:
+    """RELAXED variant: commit a backward move to the consensus
+    middle-range whenever the consensus is accepted as live + signed at
+    the current clock ("consensus download passes") - WITHOUT requiring
+    a circuit. This is what lets a fast clock be fixed even when circuit
+    building is blocked, at the cost of rollback attack surface (see
+    rollback_attack)."""
+    target = cons.middle_range
+    if target < floor:
+        return NudgeResult(clock, floor, False, "below-floor")
+    if target >= clock:
+        return NudgeResult(clock, floor, False, "no-backward-needed")
+    if net.signature_valid(clock, cons) and net.consensus_live(
+        clock, cons, impl
+    ):
+        return NudgeResult(
+            target, max(floor, target), True, "commit-no-circuit"
+        )
+    return NudgeResult(clock, floor, False, "consensus-rejected")
+
+
+def oldest_acceptable_valid_after(clock: int, impl: Impl) -> int:
+    """Smallest consensus valid_after a client still accepts as
+    reasonably-live at ``clock`` (the stalest replayed consensus whose
+    download still passes): clock <= valid_until + tol_post."""
+    return clock - CONSENSUS_LIFETIME - impl.tol_post
+
+
+def rollback_attack(
+    mode: str,
+    clock: int,
+    floor: int,
+    net: Network,
+    impl: Impl,
+    blocked: bool,
+    ratchet_floor: bool,
+) -> tuple[int, int]:
+    """Adversary repeatedly serves the oldest consensus the client will
+    accept and applies the chosen anondate ``mode``: 'forward_only'
+    (current), 'circuit_gated' (proposed safe), or 'consensus_only'
+    (relaxed). ``blocked`` = circuit building is blocked (consensus
+    download still passes). ``ratchet_floor`` = the just-set time is
+    written as the new replay floor (only possible after a real
+    circuit-using sync, so it is False while circuits are blocked).
+    Returns (total_rollback_seconds, steps)."""
+    work = Network(relays=net.relays, real_now=net.real_now, block=blocked)
+    start = clock
+    steps = 0
+    while True:
+        cons = Consensus(
+            valid_after=oldest_acceptable_valid_after(clock, impl)
+        )
+        target = cons.middle_range
+        if target >= clock or target < floor:
+            break
+        if mode == "forward_only":
+            committed = False
+        elif mode == "circuit_gated":
+            committed = work.circuit_builds(target, cons, impl)
+        elif mode == "consensus_only":
+            committed = work.signature_valid(
+                clock, cons
+            ) and work.consensus_live(clock, cons, impl)
+        else:
+            raise ValueError(mode)
+        if not committed:
+            break
+        clock = target
+        if ratchet_floor:
+            floor = max(floor, target)
+        steps += 1
+    return start - clock, steps
+
+
 def honest_network(real_now: int, count: int = 120) -> Network:
     """``count`` honest relays whose rotation phases are spread evenly
     across one rotation period, so every phase is represented."""
