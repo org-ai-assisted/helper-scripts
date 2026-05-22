@@ -88,3 +88,26 @@ more resources (and ideally IPv6), and/or raise `BOOTSTRAP_TIMEOUT` and
 the reachability budget. The implementation itself is validated by the
 manual E2E run plus the unit/integration tests; harness flakiness here
 is a test-infrastructure constraint, not a defect in the fix.
+
+## Stale-consensus safety (verified on a real aged consensus)
+
+`run-stale-consensus-test.sh` confirms the default behavior is safe in
+the "gateway off for a while" case, where the clock is CORRECT but the
+cached consensus is stale. Real run (chutney basic-min, no onion):
+
+```
+fresh consensus: valid-after='2026-05-22 11:18:40' valid-until='2026-05-22 11:19:20'
+  now=1779448737 in [va,vu] -> verdict=ok
+stop authorities so the cached consensus goes stale
+stale consensus: valid-until='2026-05-22 11:19:20' now is 2s past it
+  correct clock now=1779448762, consensus stale -> verdict=fast
+STALE-CONSENSUS RESULT: PASS
+```
+
+The consensus-sanity verdict flips `ok -> fast` purely from the
+consensus aging past `valid-until` (the clock never changed). Since
+sdwdate applies that same check per source in `remote_times.py`, the
+(correct) fetched times are likewise flagged `fast` and REJECTED - so
+sdwdate sets nothing and retries until a fresh consensus arrives. The
+default circuit-confirmed proceed therefore cannot mis-set the clock in
+the stale case; it only ever degrades to a retry.
