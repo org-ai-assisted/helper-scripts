@@ -73,19 +73,41 @@ class ToleranceTest(unittest.TestCase):
 
 
 class BenignRecoveryTest(unittest.TestCase):
-    """A fast clock beyond tolerance is corrected back to ~now once a
-    real circuit confirms it."""
+    """A fast clock WITHIN Tor's tolerance is corrected back to ~now
+    once a real circuit confirms it; one too far fast cannot recover."""
 
-    def test_large_fast_offset_recovers_to_now(self) -> None:
+    def test_in_tolerance_fast_offset_recovers_to_now(self) -> None:
         net = honest_network(REAL_NOW)
         cons = Consensus(valid_after=REAL_NOW)
-        clock = REAL_NOW + 2 * DAY
+        clock = REAL_NOW + 12 * HOUR  ## within tor's ~+-24h
         res = circuit_gated_nudge(clock, FLOOR, cons, net, CTOR)
         self.assertTrue(res.committed)
         ## Landed within the consensus window, i.e. ~real now.
         self.assertLessEqual(abs(res.clock - REAL_NOW), CONSENSUS_LIFETIME)
         ## Floor advanced (strictly non-decreasing).
         self.assertGreaterEqual(res.floor, FLOOR)
+
+    def test_far_fast_clock_cannot_recover(self) -> None:
+        ## A clock days/years fast is outside tor's reasonably-live
+        ## window: no circuit can be built at the current clock, so the
+        ## circuit-confirmed path fails closed (no commit).
+        net = honest_network(REAL_NOW)
+        cons = Consensus(valid_after=REAL_NOW)
+        for clock in (REAL_NOW + 2 * DAY, REAL_NOW + 365 * DAY):
+            res = circuit_gated_nudge(clock, FLOOR, cons, net, CTOR)
+            self.assertFalse(res.committed)
+            self.assertEqual(res.clock, clock)
+            ## And no anondate variant can act either (no acceptable,
+            ## non-future consensus): zero rollback for every mode.
+            for mode in (
+                "forward_only",
+                "circuit_gated",
+                "consensus_only",
+            ):
+                back, steps = rollback_attack(
+                    mode, clock, FLOOR, net, CTOR, False, False
+                )
+                self.assertEqual((back, steps), (0, 0))
 
 
 class BlockingTest(unittest.TestCase):

@@ -177,11 +177,14 @@ def circuit_gated_nudge(
 ) -> NudgeResult:
     """The proposed sdwdate / anondate recovery step.
 
-    The consensus only PROPOSES a target time; a real circuit COMMITS
-    it. Backward moves are provisional and reverted (forward) if no
-    circuit builds. The replay floor is a hard lower bound and is never
-    lowered. This function governs backward moves only; forward moves
-    keep anondate's existing behavior.
+    A backward move requires that a real circuit can be built AT THE
+    CURRENT clock (i.e. Tor is usable now - the consensus is reasonably
+    live and relays accept their onion keys). This mirrors the real
+    gate (onion-time-pre-script checks tor_circuit_established at the
+    current clock). If so, sdwdate fetches over that circuit and sets
+    the clock to the consensus-derived time; otherwise it reverts. The
+    replay floor is a hard lower bound and is never lowered. Forward
+    moves keep anondate's existing behavior.
     """
     target = cons.middle_range
     ## minimum-time-check: never set below the replay floor.
@@ -189,11 +192,13 @@ def circuit_gated_nudge(
         return NudgeResult(clock, floor, False, "below-floor")
     if target >= clock:
         return NudgeResult(clock, floor, False, "no-backward-needed")
-    ## Backward move: provisionally set, then require a real circuit.
-    if net.circuit_builds(target, cons, impl):
+    ## Require a real circuit AT THE CURRENT (fast) clock. If the clock
+    ## is too far off for Tor to accept any consensus (e.g. days/years
+    ## fast), no circuit exists and we cannot correct - fail closed.
+    if net.circuit_builds(clock, cons, impl):
         return NudgeResult(target, max(floor, target), True, "commit")
-    ## Revert forward to the original clock; do not lower the floor.
-    return NudgeResult(clock, floor, False, "no-circuit-revert")
+    ## No usable circuit at the current clock; do not lower the floor.
+    return NudgeResult(clock, floor, False, "no-circuit")
 
 
 def consensus_only_nudge(
@@ -251,16 +256,21 @@ def rollback_attack(
     start = clock
     steps = 0
     while True:
-        cons = Consensus(
-            valid_after=oldest_acceptable_valid_after(clock, impl)
-        )
+        valid_after = oldest_acceptable_valid_after(clock, impl)
+        ## An adversary can replay real (past) consensuses but cannot
+        ## serve a FUTURE-dated one. If the clock is so fast that even
+        ## the freshest real consensus is not reasonably-live, nothing
+        ## is accepted and no recovery/attack is possible (fail closed).
+        if valid_after > work.real_now:
+            break
+        cons = Consensus(valid_after=valid_after)
         target = cons.middle_range
         if target >= clock or target < floor:
             break
         if mode == "forward_only":
             committed = False
         elif mode == "circuit_gated":
-            committed = work.circuit_builds(target, cons, impl)
+            committed = work.circuit_builds(clock, cons, impl)
         elif mode == "consensus_only":
             committed = work.signature_valid(
                 clock, cons

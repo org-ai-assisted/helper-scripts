@@ -180,8 +180,9 @@ def sim6_end_to_end() -> None:
                 f"{str(res.committed):>6} | {delta} ({res.reason})"
             )
     print(
-        "  => unblocked fast clock recovers to ~now; blocked = no "
-        "change (DoS); slow clock left to anondate's forward path."
+        "  => a fast clock WITHIN tor's ~24h tolerance recovers to "
+        "~now; too-far-fast (no circuit) or blocked = no change; slow "
+        "clock left to anondate's forward path."
     )
 
 
