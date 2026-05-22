@@ -334,10 +334,14 @@ circuit_confirmed_backward_proceed() {
    ## Success (0) => proceed (let sdwdate fetch the time over real
    ## circuits and correct the clock) instead of waiting on forward-only
    ## anondate. A real Tor circuit being established already proves Tor
-   ## accepted a reasonably-live consensus and built working paths, so
-   ## the clock is within Tor's tolerance and sdwdate can fetch the true
-   ## time and correct it (forward OR backward) - the consensus
-   ## fast/slow/ok sub-verdict does not matter once a circuit exists.
+   ## accepted a reasonably-live consensus, so the clock is within Tor's
+   ## tolerance and sdwdate can fetch the true time and correct it
+   ## (forward OR backward) - the consensus fast/slow/ok sub-verdict does
+   ## not matter once a circuit exists. (status/circuit-established is a
+   ## sticky flag that can be a stale false positive even for general
+   ## circuits - see tor-circuit-established-check for refs; safe here
+   ## because the fetch is the real probe, so a false positive only costs
+   ## a retry, never a wrong set.)
    ## sdwdate's fetch is median-of-pool + replay-floor gated; in the
    ## stale-consensus case its per-source check rejects the times and it
    ## simply retries, so this cannot mis-set the clock (proven by
