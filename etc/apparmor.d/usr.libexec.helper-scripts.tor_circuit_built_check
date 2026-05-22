@@ -5,10 +5,8 @@ include <tunables/global>
 
 ## AI-Assisted
 
-## Active circuit-build readiness check. Same control-port access profile
-## as tor-circuit-established-check (cookie auth, python, stem); it only
-## additionally sends EXTENDCIRCUIT/SETEVENTS over the same control
-## connection, which needs no extra file or network access.
+## Same control-port access as tor-circuit-established-check; the extra
+## EXTENDCIRCUIT/SETEVENTS go over the same connection (no extra access).
 
 /usr/libexec/helper-scripts/tor_circuit_built_check.py flags=(attach_disconnected) {
   include <abstractions/consoles>

@@ -70,7 +70,7 @@ decide_confirm() {
     trap - EXIT ERR
     set +e
     output_cmd() { :; }
-    ## Stub the leaprun-backed active build (no real Tor in CI).
+    ## Stub the active build (no real Tor in CI).
     check_tor_circuit_built() {
       tor_circuit_built_check_exit_code="${built_code}"
       tor_circuit_built_output="stub"
@@ -82,10 +82,10 @@ decide_confirm() {
     printf '%s\n' "${circuit_confirmed}"
   )
 }
-## Gateway uses the active build result and ignores the sticky flag.
+## Gateway uses the active build and ignores the sticky flag; workstation
+## (no EXTENDCIRCUIT via onion-grater) defers to it.
 chk "gw + build ok (sticky 0)  -> confirmed=1" "1" "$(decide_confirm Gateway 0 0)"
 chk "gw + build fail (sticky 1) -> confirmed=0" "0" "$(decide_confirm Gateway 1 1)"
-## Workstation cannot EXTENDCIRCUIT (onion-grater); defers to sticky flag.
 chk "ws + flag 1 -> confirmed=1" "1" "$(decide_confirm Workstation 1 1)"
 chk "ws + flag 0 -> confirmed=0" "0" "$(decide_confirm Workstation 0 0)"
 
