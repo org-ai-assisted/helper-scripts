@@ -115,9 +115,20 @@ main() {
     --bind 127.0.0.1 ) >"${WORK}/http.log" 2>&1 &
   HTTP_PID="$!"
 
+  ## A cold network must form a consensus (and assign HSDir flags)
+  ## before the onion can publish; wait for that before testing it.
+  log "wait for network consensus"
+  local w=0
+  until ./chutney wait_for_bootstrap "${NETWORK}" >/dev/null 2>&1; do
+    ensure_all_nodes_running
+    sleep 5
+    w=$((w + 5))
+    [ "${w}" -ge 300 ] && break
+  done
+
   log "wait for onion descriptor + reachability via ${socks}"
   local onion="" out="" i
-  for i in $(seq 1 60); do
+  for i in $(seq 1 90); do
     onion="$(cat net/nodes/*h/hidden_service/hostname 2>/dev/null | head -1)"
     if [ -n "${onion}" ]; then
       out="$(curl -s -m 20 --socks5-hostname "${socks}" \
@@ -126,8 +137,14 @@ main() {
     fi
     sleep 8
   done
-  printf '%s' "${out}" | grep -qi '^Date:' ||
+  if ! printf '%s' "${out}" | grep -qi '^Date:'; then
+    printf 'diag: onion=%s\n' "${onion:-<none>}"
+    printf 'diag: hs log:\n'
+    tail -4 net/nodes/*h/notice.log 2>/dev/null
+    printf 'diag: client log:\n'
+    tail -4 net/nodes/*c/notice.log 2>/dev/null
     fail "onion never reachable (HS warmup/bootstrap)"
+  fi
   log "onion reachable: ${onion}"
 
   ## (1) fetch at the true clock; (2) under a faked fast clock.
