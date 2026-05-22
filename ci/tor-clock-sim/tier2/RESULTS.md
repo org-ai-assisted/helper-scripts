@@ -62,7 +62,7 @@ So the wiki figure describes **sdwdate's effective acceptance**, while
 ## Caveats
 
 - `TestingTorNetwork` uses tiny consensus intervals, so absolute edges
-  differ from production; the *behavior* (±24h raw tor; ~3h sdwdate
+  differ from production; the *behavior* (+/-24h raw tor; ~3h sdwdate
   gate) is what transfers.
 - One client implementation (`tor 0.4.8.10`). Re-run with Arti to
   measure its 1d/3d `DirTolerance` at the raw layer.
