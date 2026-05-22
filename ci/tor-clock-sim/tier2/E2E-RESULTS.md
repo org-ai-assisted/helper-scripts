@@ -111,3 +111,43 @@ sdwdate applies that same check per source in `remote_times.py`, the
 sdwdate sets nothing and retries until a fresh consensus arrives. The
 default circuit-confirmed proceed therefore cannot mis-set the clock in
 the stale case; it only ever degrades to a retry.
+
+## Circuit-established is a false positive for onion reachability (verified on real Tor)
+
+`run-circuit-falsepositive-test.sh` confirms the maintainer experience
+on real Tor (not a model): the control-port `GETINFO
+status/circuit-established` can read `1` while an onion (rendezvous)
+connection still fails. The default gate proceeds on
+`circuit-established=1`; on a false positive sdwdate therefore proceeds,
+the onion time-source fetch then fails, and it retries. No wrong clock
+is set. Real run (chutney basic-min, raw control socket, fetch of a
+valid-but-UNPUBLISHED v3 .onion - a general circuit exists, but that
+onion lookup must fail):
+
+```
+circuit-established = 1
+fetch a valid-but-UNPUBLISHED onion via client socks ...
+circuit-established = 1   absent-onion fetch = <fail>
+CIRCUIT-FALSEPOSITIVE RESULT: PASS - circuit-established=1 yet the onion
+fetch failed. 'circuit established' (a general-purpose circuit) does NOT
+imply onion reachability, confirming it is a false positive for
+sdwdate's needs; the default gate proceeds on it and the fetch then
+fails -> retry (non-fatal).
+```
+
+### Consequence for the gate
+
+`status/circuit-established` reflects a general-purpose circuit, not
+onion reachability. The circuit-only gate is therefore SAFE but not
+PRECISE: a false positive costs only a retry, never a wrong set, because
+the backward correction is driven by a successful onion fetch, and that
+fetch is itself the real onion-reachability probe. The false positive
+makes the gate fire one step early; the fetch that follows is the
+ground-truth check, and it fails closed (retry) when onion paths are not
+actually up. So the residual cost is retry churn while a general circuit
+exists but onion paths do not - not a correctness risk.
+
+A strictly more precise gate would replace `status/circuit-established`
+with an explicit onion-connectivity probe, but since the time-source
+fetch already serves as that probe one step downstream, the added gate
+logic buys only the elimination of that benign retry churn.
