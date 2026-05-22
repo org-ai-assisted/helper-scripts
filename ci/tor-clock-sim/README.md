@@ -79,11 +79,17 @@ CI-only: this folder is not shipped in the `.deb`. To wire it into
 `run-tests`, run the `test_tor_clock_sim.py` module under pytest;
 `black --line-length 79 --check` keeps it style-consistent.
 
-## Tier 2 - confirm against the real binaries (TODO)
+## Tier 2 - confirm against the real binaries
 
-This model's *thresholds* are predictions. Validate them with
-[Shadow](https://shadow.github.io/), which runs **real C-Tor (and
-Arti)** in a simulated network with controllable time:
+This model's *thresholds* are predictions. A lightweight harness that
+runs the **real `tor` binary** against a local private network
+(chutney) and sweeps the client clock under `faketime` lives in
+[`tier2/`](tier2/) - no external Tor egress needed. See
+`tier2/README.md`.
+
+For higher fidelity (real C-Tor *and* Arti, virtualized time, long
+sim-durations to exercise onion-key rotation), use
+[Shadow](https://shadow.github.io/):
 
 1. Stand up a private net (dir auths + relays + client).
 2. Sweep the client clock offset `{-35d ... -1h, 0, +1h, +3h, +6h,
