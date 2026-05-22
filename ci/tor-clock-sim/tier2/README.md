@@ -31,6 +31,13 @@ ALLOW_LOCAL=true ./run-chutney-clock-sweep.sh
 Tunables (env): `CHUTNEY_TOR`, `CHUTNEY_TOR_GENCERT`, `WORK_DIR`,
 `NETWORK`, `OFFSETS_HOURS`, `BOOTSTRAP_TIMEOUT`, `CLIENT_TIMEOUT`.
 
+Performance: offsets are probed in parallel and each client is killed
+the moment it reports `Bootstrapped 100%`, so a full sweep costs about
+one `CLIENT_TIMEOUT` (the slowest failing client) regardless of how
+many offsets are probed. A measured 4-offset run took ~2.7 min, almost
+all of it the one-time chutney consensus-formation setup; the clone is
+cached in `WORK_DIR` between runs.
+
 Output is a table:
 
 ```
