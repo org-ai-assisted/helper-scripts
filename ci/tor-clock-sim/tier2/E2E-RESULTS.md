@@ -151,3 +151,55 @@ A strictly more precise gate would replace `status/circuit-established`
 with an explicit onion-connectivity probe, but since the time-source
 fetch already serves as that probe one step downstream, the added gate
 logic buys only the elimination of that benign retry churn.
+
+### Why it is a false positive even for general-purpose circuits (C-Tor source)
+
+The maintainer experience that `circuit-established=1` can lie even for
+GENERAL (not just onion) traffic is confirmed in the C-Tor source.
+`GETINFO status/circuit-established` returns `have_completed_a_circuit()`
+(src/feature/control/control_getinfo.c), which just reads a sticky
+global flag `can_complete_circuits` (src/core/mainloop/mainloop.c):
+
+- SET to 1 once, the first time ANY multi-hop circuit reaches the
+  "circuit built!" point (src/core/or/circuitbuild.c, in
+  `circuit_build_no_more_hops`). It is NOT gated on the circuit being
+  usable for streams: a circuit in `CIRCUIT_STATE_GUARD_WAIT`
+  (`GUARD_MAYBE_USABLE_LATER`) still flips the flag, and the code itself
+  flags this as subtle (the "XXXX #21422 ... mechanically open vs.
+  actually usable" comment). So the flag can read 1 for a circuit that
+  is not (yet) carrying traffic.
+- Once 1, it is reset to 0 ONLY on coarse, event-driven triggers, none
+  of which is "a fetch just failed":
+  1. a system CLOCK JUMP (forward or backward) or a long IDLE period,
+     via `circuit_note_clock_jumped` -- "assuming established circuits
+     no longer work" (CIRCUIT_NOT_ESTABLISHED REASON=CLOCK_JUMPED);
+  2. directory info going too stale to build circuits (nodelist.c,
+     NOT_ENOUGH_DIR_INFO);
+  3. process teardown reset (mainloop.c).
+
+So a network that silently goes dead (upstream link drops, relays stop
+answering) WITHOUT tripping one of those triggers leaves
+`circuit-established=1` even though no circuit currently carries
+traffic. This is the behaviour behind tor#28027
+(`have_completed_a_circuit()` still true after a guard-context switch
+left all circuits unusable). The flag is a historical "client
+functionality looked like it worked at least once, and nothing has
+since told us otherwise" signal - not a live connectivity check.
+
+### Why this does not endanger sdwdate
+
+The set-the-clock decision is gated by a SUCCESSFUL onion fetch, not by
+the flag. The flag only decides whether to TRY (proceed) vs WAIT
+(forward-only anondate / retry). So however unreliable the flag is, a
+false positive can only cause an extra TRY whose fetch then fails
+closed -> retry; it can never cause a wrong clock set, because a wrong
+set would require a successful fetch, and a successful fetch means the
+network really was usable at that moment. Two of the reset triggers are
+even protective for the exact worry-cases:
+
+- IDLE reset: a gateway that was off for a while reads
+  `circuit-established=0`, so the gate correctly WAITS instead of
+  proceeding on a stale clock.
+- CLOCK-JUMP reset: the moment sdwdate corrects the clock, Tor's own
+  clock-jump detector clears the flag and rebuilds circuits, so the
+  signal self-invalidates rather than lingering as a stale 1.
