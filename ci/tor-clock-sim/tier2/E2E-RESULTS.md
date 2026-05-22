@@ -203,3 +203,27 @@ even protective for the exact worry-cases:
 - CLOCK-JUMP reset: the moment sdwdate corrects the clock, Tor's own
   clock-jump detector clears the flag and rebuilds circuits, so the
   signal self-invalidates rather than lingering as a stale 1.
+
+### Empirical confirmation (real Tor)
+
+`run-circuit-stickiness-test.sh` demonstrates the general-circuit false
+positive on a live chutney net: bring the client to
+`circuit-established=1`, then kill EVERY relay and authority (the
+network is provably dead - 0 such tor processes) and keep probing.
+Real run:
+
+```
+circuit-established (network alive) = 1
+kill ALL relays + authorities (leave only the client)
+live relay/authority tor processes now = 0
++ 3s after kill: circuit-established=1   general-socks=fail
++ 8s after kill: circuit-established=1   general-socks=fail
++13s after kill: circuit-established=1   general-socks=fail
+CIRCUIT-STICKINESS RESULT: PASS - circuit-established=1 while a general
+SOCKS connect failed and 0 relays/authorities remain. 'circuit
+established' is a sticky historical flag, NOT a live connectivity check.
+```
+
+With the entire network dead, the client still reported
+`circuit-established=1` for the whole probe window while a general
+(non-onion) SOCKS connect failed - matching the source analysis above.
