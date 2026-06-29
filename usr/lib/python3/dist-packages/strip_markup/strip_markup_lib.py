@@ -61,6 +61,14 @@ def strip_markup(untrusted_string: str) -> str:
     markup_stripper: StripMarkupEngine = StripMarkupEngine()
     try:
         markup_stripper.feed(untrusted_string)
+        ## close() is required: with convert_charrefs=True the parser buffers
+        ## character data to coalesce entities and only flushes it at the next
+        ## tag or on close(). Without close(), a tagless string that contains a
+        ## '&' (e.g. any URL with a query string, "...?a=1&b=2") never reaches
+        ## handle_data and get_data() returns "" - the whole value is silently
+        ## dropped. That empties the confirmation dialog, hiding the link the
+        ## user is being asked to confirm.
+        markup_stripper.close()
     except Exception:
         ## CPython's HTMLParser raises uncaught exceptions on some
         ## malformed inputs (e.g. AssertionError on '<![...' patterns
@@ -73,6 +81,7 @@ def strip_markup(untrusted_string: str) -> str:
     markup_stripper = StripMarkupEngine()
     try:
         markup_stripper.feed(strip_one_string)
+        markup_stripper.close()
     except Exception:
         return _underscore_sanitize(strip_one_string)
     strip_two_string: str = markup_stripper.get_data()
