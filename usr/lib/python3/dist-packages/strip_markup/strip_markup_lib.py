@@ -77,7 +77,14 @@ def strip_markup(untrusted_string: str) -> str:
         return _underscore_sanitize(strip_one_string)
     strip_two_string: str = markup_stripper.get_data()
     if strip_one_string == strip_two_string:
-        return strip_one_string
+        ## A '<' that this parser does not treat as a tag (e.g. "< a href=...>",
+        ## where whitespace after '<' defeats Python's html.parser) can still be
+        ## revived into a tag by a more lenient downstream HTML parser, such as
+        ## Qt's QTextDocument used by msgcollector's generic_gui_message. Neuter
+        ## any residual tag-opening '<' so stripped output cannot be
+        ## re-interpreted as markup. '>' and '&' alone cannot open a tag, and
+        ## neutering them would corrupt legitimate text, so they are left as-is.
+        return strip_one_string.replace("<", "_")
 
     ## If we get this far, the second strip attempt further transformed the
     ## text, indicating an attempt to maliciously circumvent the stripper.

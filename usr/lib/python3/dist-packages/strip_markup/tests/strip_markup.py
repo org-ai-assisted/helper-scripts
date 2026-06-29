@@ -258,6 +258,29 @@ document with an embedded script. :)
                 + "exist.</huh>",
                 "This is a document containing tags that don't really exist.",
             ),
+            ## A '<' followed by whitespace then a tag name is not a tag to
+            ## Python's html.parser, so it passes through verbatim - but a more
+            ## lenient downstream parser (Qt's QTextDocument, used by
+            ## msgcollector's generic_gui_message) skips the whitespace and
+            ## revives the tag. The residual '<' must be neutered to '_' so the
+            ## stripped output cannot be re-interpreted as markup.
+            (
+                "< a href='http://example.com'>click</a>",
+                "_ a href='http://example.com'>click",
+            ),
+            (
+                "< img src='http://example.com/beacon.png'>",
+                "_ img src='http://example.com/beacon.png'>",
+            ),
+            ## A benign, non-markup '<' is neutered to '_' as well. This is a
+            ## deliberate, conservative choice: guaranteeing no '<' survives is
+            ## provably safe against any downstream HTML parser, whereas trying
+            ## to preserve "harmless" '<' would require modelling that parser's
+            ## tag grammar - exactly the assumption this fix exists to remove.
+            (
+                "a < b",
+                "a _ b",
+            ),
         ]
 
         for test_case in test_case_list:
