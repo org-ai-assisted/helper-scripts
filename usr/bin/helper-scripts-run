@@ -1,0 +1,58 @@
+#!/bin/bash
+
+## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Run a helper-scripts tool (or any command) with HELPER_SCRIPTS_PATH and
+## PYTHONPATH pointing at THIS helper-scripts tree, so callers -- notably
+## during the derivative-maker build bootstrap, before helper-scripts is
+## installed -- need not repeat that env setup to use the in-tree Python
+## helpers (e.g. stcat, whose 'stdisplay' module lives in the in-tree
+## dist-packages). A bare tool name (no '/') resolves to this tree's
+## usr/bin; a path or external command name is executed as given.
+##
+## Usage: helper-scripts-run <tool|command> [args...]
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+
+if [ "$#" -lt 1 ]; then
+   printf '%s\n' "usage: ${0##*/} <tool|command> [args...]" >&2
+   exit 1
+fi
+
+## This script lives in <helper-scripts>/usr/bin; the tree root is two
+## levels up. Prefer an already-set HELPER_SCRIPTS_PATH (e.g. exported by
+## the derivative-maker build's help-steps) over the self-derived path.
+self_file="$(readlink -f -- "${BASH_SOURCE[0]}")"
+helper_scripts_dir="$(cd -- "$(dirname -- "$self_file")/../.." && pwd)"
+
+HELPER_SCRIPTS_PATH="${HELPER_SCRIPTS_PATH:-$helper_scripts_dir}"
+export HELPER_SCRIPTS_PATH
+
+PYTHONPATH="${HELPER_SCRIPTS_PATH}/usr/lib/python3/dist-packages${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH
+
+tool="$1"
+shift
+
+## A bare name resolves to this helper-scripts' usr/bin (so callers can say
+## 'helper-scripts-run stcat ...'); anything with a '/' runs as given.
+case "$tool" in
+   */*)
+      ## Already a path; execute as given.
+      ;;
+   *)
+      if [ -x "${HELPER_SCRIPTS_PATH}/usr/bin/${tool}" ]; then
+         tool="${HELPER_SCRIPTS_PATH}/usr/bin/${tool}"
+      fi
+      ;;
+esac
+
+exec -- "$tool" "$@"
