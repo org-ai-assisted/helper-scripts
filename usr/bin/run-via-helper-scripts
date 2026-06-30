@@ -27,13 +27,14 @@ if [ "$#" -lt 1 ]; then
    exit 1
 fi
 
-## This script lives in <helper-scripts>/usr/bin; the tree root is two
-## levels up. Prefer an already-set HELPER_SCRIPTS_PATH (e.g. exported by
-## the derivative-maker build's help-steps) over the self-derived path.
-self_file="$(readlink -f -- "${BASH_SOURCE[0]}")"
-helper_scripts_dir="$(cd -- "$(dirname -- "$self_file")/../.." && pwd)"
-
-HELPER_SCRIPTS_PATH="${HELPER_SCRIPTS_PATH:-$helper_scripts_dir}"
+## Prefer an already-set HELPER_SCRIPTS_PATH (e.g. exported by the
+## derivative-maker build's help-steps); only when it is unset, self-locate.
+## This script lives in <helper-scripts>/usr/bin, so the tree root is two
+## levels up.
+if [ ! -v HELPER_SCRIPTS_PATH ]; then
+   self_file="$(readlink -f -- "${BASH_SOURCE[0]}")"
+   HELPER_SCRIPTS_PATH="$(cd -- "$(dirname -- "$self_file")/../.." && pwd)"
+fi
 export HELPER_SCRIPTS_PATH
 
 PYTHONPATH="${HELPER_SCRIPTS_PATH}/usr/lib/python3/dist-packages${PYTHONPATH:+:${PYTHONPATH}}"
