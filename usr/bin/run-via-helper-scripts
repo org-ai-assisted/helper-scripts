@@ -13,7 +13,7 @@
 ## dist-packages). A bare tool name (no '/') resolves to this tree's
 ## usr/bin; a path or external command name is executed as given.
 ##
-## Usage: helper-scripts-run <tool|command> [args...]
+## Usage: run-via-helper-scripts <tool|command> [args...]
 
 set -o errexit
 set -o nounset
@@ -43,10 +43,10 @@ tool="$1"
 shift
 
 ## A bare name resolves to this helper-scripts' usr/bin (so callers can say
-## 'helper-scripts-run stcat ...'); anything with a '/' runs as given.
+## 'run-via-helper-scripts stcat ...'); anything with a '/' runs as given.
 case "$tool" in
    */*)
-      ## Already a path; execute as given.
+      ## Already a path; run as given.
       ;;
    *)
       if [ -x "${HELPER_SCRIPTS_PATH}/usr/bin/${tool}" ]; then
@@ -55,4 +55,9 @@ case "$tool" in
       ;;
 esac
 
-exec -- "$tool" "$@"
+## Run as a child rather than 'exec', so this wrapper stays visible in the
+## process tree (the call chain is easier to debug); forward the tool's
+## exit code.
+exit_code=0
+"$tool" "$@" || exit_code=$?
+exit "$exit_code"
