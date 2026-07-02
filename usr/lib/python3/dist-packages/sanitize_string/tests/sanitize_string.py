@@ -50,6 +50,16 @@ sanitize-string: Usage: sanitize-string [--help] max_length [string]
             ["-5"],
             ["not-a-number"],
             ["1", "2", "3"],
+            ## max_length must be a canonical non-negative decimal integer;
+            ## Python int()'s leniency is rejected.
+            ["1_0"],  # digit-group underscore
+            [" 8 "],  # surrounding whitespace
+            ["+8"],  # leading plus
+            ["008"],  # leading zero
+            ["0x8"],  # hex
+            ["8.0"],  # float
+            ["\u0668"],  # non-ASCII (Arabic-Indic) digit eight
+            ["1" * 5000],  # exceeds Python's int() string-digit limit
         ]
 
         for test_args in test_args_list:

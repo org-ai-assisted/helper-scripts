@@ -9,6 +9,7 @@
 sanitize_string.py: Strips markup and control characters from a string.
 """
 
+import re
 import sys
 from .sanitize_string_lib import sanitize_string
 
@@ -60,12 +61,20 @@ def main() -> int:
         print_usage()
         return 1
     if arg_list[0] != "nolimit":
+        ## Accept only a canonical non-negative decimal integer. Python's int()
+        ## is too lenient for a length argument: it also accepts digit-group
+        ## underscores ("1_0"), surrounding whitespace, a leading "+", leading
+        ## zeros ("008"), and non-ASCII digits (e.g. Arabic-Indic). None of
+        ## those should be a valid max_length.
+        if re.fullmatch(r"0|[1-9][0-9]*", arg_list[0]) is None:
+            print_usage()
+            return 1
         try:
             max_string_length = int(arg_list[0])
-            if max_string_length < 0:
-                print_usage()
-                return 1
         except ValueError:
+            ## Python's integer string-conversion digit limit (the
+            ## CVE-2020-10735 mitigation) rejects extremely long decimal
+            ## strings even though they are all digits.
             print_usage()
             return 1
     if len(arg_list) == 2:
