@@ -6,15 +6,15 @@
 ## style-ok: no-strict -- sourced library; a top-level strict-mode block
 ## would leak 'set -o errexit'/'nounset' into the sourcing shell.
 
-# shellcheck source=get_colors.sh
+# shellcheck source=./get_colors.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_colors.sh
-# shellcheck source=strings.bsh
+# shellcheck source=./strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
-# shellcheck source=xtrace.bsh
+# shellcheck source=./xtrace.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/xtrace.bsh
-# shellcheck source=has.sh
+# shellcheck source=./has.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
-# shellcheck source=trace.bsh
+# shellcheck source=./trace.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/trace.bsh
 
 if ! type_exists stecho sanitize-string; then
