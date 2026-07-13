@@ -67,12 +67,6 @@ def get_sgr_support() -> int:
     >>> get_sgr_support()
     -1
     """
-    ## TERM=dumb takes the same path as NO_COLOR: a terminal explicitly set to
-    ## 'dumb' has no color support, and that must win over COLORTERM. COLORTERM
-    ## only advertises a RICHER mode than TERM already supports (truecolor on
-    ## an xterm); it cannot make a no-color terminal support color. Checking
-    ## COLORTERM first let TERM=dumb be overridden, contradicting the contract
-    ## documented above.
     if environ.get("NO_COLOR") or environ.get("TERM") == "dumb":
         return -1
     colorterm: str | None = environ.get("COLORTERM")
