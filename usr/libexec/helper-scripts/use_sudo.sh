@@ -3,6 +3,15 @@
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## style-ok: no-strict
+## Sourced-only function library: top-level strict-mode would leak into the
+## sourcing shell (see R-010 waiver rationale).
+
+## style-ok: no-has
+## 'command -v sudo' below deliberately captures the resolved path into
+## 'sudo_exe' for the subsequent 'test -x'; 'has' only reports presence, not the
+## path, so it cannot replace this use.
+
 sudo_useable_test() {
    use_sudo='no'
 
@@ -35,8 +44,25 @@ sudo_useable_test() {
 }
 
 sudo_error_exit_if_unavailable() {
+   local msg
+
    if [ "$use_sudo" = "no" ]; then
-      printf '%s\n' "ERROR: sudo unavailable. Boot into sysmaint session?"
+      msg="ERROR: sudo unavailable. Boot into sysmaint session?"
+      ## Launched from a .desktop entry there is no controlling terminal, so
+      ## the stderr message is invisible; surface it in a dialog instead. Show
+      ## the dialog only when this really looks like a graphical launch: no
+      ## stream is a terminal AND a display is reachable. That keeps the plain
+      ## stderr path for an interactive CLI caller (even one redirecting only
+      ## stderr, e.g. 'tool 2>log') and for an unattended batch job (cron, CI,
+      ## systemd, ssh command) that has no display, so neither is blocked by a
+      ## modal dialog. Soft dependency: no dialog when msgcollector is absent.
+      if [ ! -t 0 ] && [ ! -t 1 ] && [ ! -t 2 ] \
+         && { [ -n "${WAYLAND_DISPLAY:-}" ] || [ -n "${DISPLAY:-}" ]; } \
+         && [ -x /usr/libexec/msgcollector/generic_gui_message ]; then
+         /usr/libexec/msgcollector/generic_gui_message \
+            error "Superuser rights unavailable" "$msg" "" ok || true
+      fi
+      printf '%s\n' "$msg" >&2
       exit 1
    fi
 }
