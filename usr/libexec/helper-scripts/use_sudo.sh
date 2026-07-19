@@ -58,8 +58,8 @@ sudo_error_exit_if_unavailable() {
       ## modal dialog. Soft dependency: no dialog when msgcollector is absent.
       if [ ! -t 0 ] && [ ! -t 1 ] && [ ! -t 2 ] \
          && { [ -n "${WAYLAND_DISPLAY:-}" ] || [ -n "${DISPLAY:-}" ]; } \
-         && [ -x /usr/libexec/msgcollector/generic_gui_message ]; then
-         /usr/libexec/msgcollector/generic_gui_message \
+         && [ -x /usr/libexec/msgcollector/generic_gui_message.py ]; then
+         /usr/libexec/msgcollector/generic_gui_message.py \
             error "Superuser rights unavailable" "$msg" "" ok || true
       fi
       printf '%s\n' "$msg" >&2
