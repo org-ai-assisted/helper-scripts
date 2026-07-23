@@ -61,11 +61,14 @@ if [ "${local_is_binary}" = 'true' ] || [ "${remote_is_binary}" = 'true' ]; then
 fi
 
 case "${viewer}" in
+   ## A GUI viewer's exit code is not a review verdict, so '|| true' keeps it
+   ## from aborting us under errexit (kdiff3 exits 1 whenever inputs differ;
+   ## meld's exit is unreliable). Same guard as git-review-mergetool.
    meld)
-      meld "${local_file}" "${remote_file}"
+      meld "${local_file}" "${remote_file}" || true
       ;;
    kdiff3)
-      kdiff3 "${local_file}" "${remote_file}"
+      kdiff3 "${local_file}" "${remote_file}" || true
       ;;
    diff-review)
       ## Terminal-safe textual diff: 'diff' rc 0 (same) / 1 (differ) are OK; rc
