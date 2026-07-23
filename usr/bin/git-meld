@@ -25,11 +25,7 @@ review_tool="git-meld"
 ## Invoked indirectly by the sourced git-review-driver.sh (not dead code).
 # shellcheck disable=SC2317
 display_regular_file() {
-   ## A GUI viewer's exit code is not a review verdict, so never let it make git
-   ## treat this external diff as "died" and abort the whole review. meld's exit
-   ## is unreliable (0 even when closed unsaved); same guard as git-kdiff3 and
-   ## git-review-mergetool.
-   meld "${1}" "${2}" || true
+   meld "${1}" "${2}"
 }
 
 # shellcheck source=../libexec/helper-scripts/git-review-driver.sh
