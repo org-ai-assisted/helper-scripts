@@ -1,0 +1,174 @@
+#!/bin/bash -e
+
+## Copyright (C) 2020 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## errexit on the shebang (direct run only; ignored when sourced) so a failed
+## 'source' below aborts before main() sets the full strict block.
+
+## provides was_executed
+# shellcheck source=../libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+## provides has
+# shellcheck source=../libexec/helper-scripts/has.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
+
+## True if a DRM node ('/dev/dri/renderD*', '/dev/dri/card*') or the NVIDIA
+## control node ('/dev/nvidiactl') is present. Both paths are overridable
+## (DETECT_SOFTWARE_RENDERING_DRI_DIR, DETECT_SOFTWARE_RENDERING_NVIDIA_CTL) for
+## tests. Pure and strict-mode free.
+gpu_node_present() {
+   local dri_dir nvidia_ctl node
+
+   dri_dir="${DETECT_SOFTWARE_RENDERING_DRI_DIR:-/dev/dri}"
+   nvidia_ctl="${DETECT_SOFTWARE_RENDERING_NVIDIA_CTL:-/dev/nvidiactl}"
+   for node in "${dri_dir}"/renderD* "${dri_dir}"/card* ; do
+      if [ -e "${node}" ]; then
+         return 0
+      fi
+   done
+   [ -e "${nvidia_ctl}" ]
+}
+
+## Classify the OpenGL renderer. Best-effort only. Prints exactly one word:
+## accelerated, software or unknown; anything not a clear match is 'unknown',
+## never assumed. Pure and strict-mode free (see detect_software_rendering).
+##
+## Two zero-cost, hang-free short-circuits run before 'eglinfo', so the common
+## no-GPU VM case never spawns a GL probe:
+##  - LIBGL_ALWAYS_SOFTWARE truthy: the Mesa stack is forced to llvmpipe.
+##  - no DRM node ('/dev/dri/renderD*', '/dev/dri/card*') AND no NVIDIA node
+##    ('/dev/nvidiactl'): no hardware driver at all. Proprietary NVIDIA (classic
+##    GLX) renders via '/dev/nvidia*', not a DRM node, so its presence blocks
+##    this short-circuit and falls through to the probe.
+## Only when a GPU node is present is eglinfo asked for the actual renderer.
+## eglinfo's GBM/Wayland/device probes FAIL FAST without a DRM node; the one path
+## that can block is the X11/Wayland platform connecting to $DISPLAY /
+## $WAYLAND_DISPLAY when the server accepts but never replies (a half-started
+## server during login), so those are unset for the eglinfo call (the renderer is
+## still read via the surfaceless/GBM/device platforms), and it is bounded with
+## 'timeout' as a backstop.
+probe_renderer() {
+   local eglinfo_output renderer_line timeout_maybe
+
+   ## LIBGL_ALWAYS_SOFTWARE forces the Mesa stack to llvmpipe -> software.
+   case "${LIBGL_ALWAYS_SOFTWARE:-}" in
+      1 | [Tt][Rr][Uu][Ee])
+         printf '%s\n' "software"
+         return 0
+         ;;
+   esac
+
+   ## No GPU node -> no hardware driver -> software.
+   if ! gpu_node_present ; then
+      printf '%s\n' "software"
+      return 0
+   fi
+
+   ## A GPU node is present but eglinfo is not installed -> cannot tell -> unknown.
+   if ! has eglinfo ; then
+      printf '%s\n' "unknown"
+      return 0
+   fi
+
+   eglinfo_output=""
+   renderer_line=""
+   timeout_maybe=""
+
+   ## 'timeout' (coreutils, Essential: yes) bounds eglinfo; empty prefix if it is
+   ## somehow absent, running eglinfo unbounded. 'env' unsets DISPLAY /
+   ## WAYLAND_DISPLAY so eglinfo cannot block on a display-server connect; the
+   ## renderer still comes from the surfaceless/GBM/device platforms.
+   ## --kill-after=5: a plain 'timeout 5' only sends SIGTERM, which a wedged
+   ## eglinfo stuck in a syscall can ignore and then run forever; the follow-up
+   ## SIGKILL 5s later guarantees it dies.
+   if has timeout ; then
+      timeout_maybe="timeout --kill-after=5 5"
+   fi
+   ## Deliberate word-splitting: 'timeout --kill-after=5 5' -> three words, or nothing.
+   # shellcheck disable=SC2086
+   eglinfo_output="$(${timeout_maybe} env --unset=DISPLAY --unset=WAYLAND_DISPLAY eglinfo -B 2>/dev/null)" || true
+   renderer_line="$(printf '%s\n' "${eglinfo_output}" | grep --fixed-strings -- "OpenGL core profile renderer:")" || true
+
+   ## Known hardware vendor renderer -> accelerated. Here-string, not a pipe, so
+   ## a quiet grep cannot SIGPIPE the producer into a pipefail failure (R-161).
+   if grep --quiet --fixed-strings \
+      -e "AMD" \
+      -e "NVIDIA" \
+      -e "Intel" \
+      -e "Apple" \
+      -e "Adreno" \
+      -e "Radeon" \
+      -e "ATI" \
+      -e "Mali" \
+      -e "Panfrost" \
+      -e "V3D" \
+      -e "VC4" \
+      -e "PowerVR" \
+      -e "Vivante" \
+      -e "etnaviv" \
+      -e "Lima" \
+      -e "virgl" \
+      -e "SVGA3D" \
+      -e "D3D12" \
+      <<< "${renderer_line}" ; then
+      printf '%s\n' "accelerated"
+      return 0
+   fi
+
+   if grep --quiet --fixed-strings -- "llvmpipe" <<< "${renderer_line}" ; then
+      printf '%s\n' "software"
+      return 0
+   fi
+
+   printf '%s\n' "unknown"
+}
+
+## Best-effort GUESS of the renderer type. Prints one of, and returns:
+##   software      0   llvmpipe (mesa CPU renderer)
+##   accelerated   1   a known hardware vendor renderer
+##   unknown       2   eglinfo absent / empty / timed out / unrecognized
+##
+## Deliberately NOT cached: a GPU node can appear (NVIDIA nodes are created on
+## demand, eGPU/DisplayLink/VM hot-add) and disappear (unplug, VM device_del)
+## within a boot, so any per-boot snapshot goes stale in one direction or the
+## other. Re-evaluating every call is cheap: the no-GPU case short-circuits
+## instantly, and the eglinfo path is fast (its hanging X11/Wayland connect is
+## avoided -- see probe_renderer).
+##
+## Pure and strict-mode free, so a caller (unit test, or another script reusing
+## the guess) can source this file and call this function without inheriting
+## strict-mode. main() owns strict-mode; this function does not.
+detect_software_rendering() {
+   local result
+
+   result="$(probe_renderer)"
+   printf '%s\n' "${result}"
+   case "${result}" in
+      software)
+         return 0
+         ;;
+      accelerated)
+         return 1
+         ;;
+      *)
+         return 2
+         ;;
+   esac
+}
+
+main() {
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+
+   detect_software_rendering "$@"
+}
+
+## Only auto-run when executed, not when sourced (unit tests source it).
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi

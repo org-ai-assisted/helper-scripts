@@ -15,8 +15,8 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
-set -o pipefail
 
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
@@ -193,7 +193,7 @@ has_consensus() {
       exit 4
    fi
    local grep_exit_code="0"
-   grep -qs "^valid-until ${DATE_RE}"'$' "${consensus}" || { grep_exit_code="$?" ; true; };
+   grep --quiet --no-messages "^valid-until ${DATE_RE}"'$' "${consensus}" || { grep_exit_code="$?" ; true; };
    if [ "${grep_exit_code}" = "0" ]; then
       return 0
    else

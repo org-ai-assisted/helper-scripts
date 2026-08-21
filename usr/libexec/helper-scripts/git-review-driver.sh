@@ -255,7 +255,7 @@ if [ "${old_mode}" = "160000" ] || [ "${new_mode}" = "160000" ]; then
   ## `git submodule status path/to/module` instead. If a submodule is not
   ## initialized, the output from `git submodule status` will start with a
   ## `-` character.
-  if [[ "$(git submodule status "${diff_path}" 2>/dev/null)" =~ ^- ]]; then
+  if [[ "$(git submodule status -- "${diff_path}" 2>/dev/null)" =~ ^- ]]; then
     log error "submodule '${diff_path_q}' not an initialized git repo; cannot show diff. Failing closed."
     log notice "Hint: Use 'git submodule update --init --recursive --progress --jobs=4' to initialize all submodules."
     exit 1
