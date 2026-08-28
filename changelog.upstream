@@ -1,3 +1,108 @@
+commit 809afda1d67332bb583ccd4f4761d9c91bb9d549
+Merge: 38e2a24c b5c9a3f5
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Tue Aug 25 09:47:04 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/org-ai-assisted/ai'
+
+commit b5c9a3f53ea415ab2eaa4c81310afc2b716d10d8
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Mon Aug 24 23:31:04 2026 -0400
+
+    ci: drop orphaned consumer-secrets-audit.yml (reusable decommissioned)
+
+commit 67efddd7629c1d58b392c0482ea7fe5d4009c84c
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Mon Aug 24 23:31:02 2026 -0400
+
+    ci: drop orphaned consumer-codex-review.yml (reusable decommissioned)
+
+commit cff50f8437e78710f14b5f360eb910255dd6bde8
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Mon Aug 24 23:31:00 2026 -0400
+
+    ci: drop orphaned consumer-claude-code.yml (reusable decommissioned)
+
+commit eb8aef1afcbecb1dd7159c994e080e0e4bbb84e5
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:55:23 2026 -0400
+
+    curl-prgrs: document header-probe argv residuals
+
+commit 2be94350bbfb6a0f99a81f2458764aca81b1186f
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:45:52 2026 -0400
+
+    curl-prgrs: drop header-probe --continue-at 0
+
+    - appending it re-broke '-- URL': tokens after the caller's end-of-options
+      '--' become bogus URLs (curl exit 116/3). output-first alone is
+      --safe and defuses the output hijack; an attached '-C100' resume is a
+      documented residual (needs a curl option-grammar parser to defuse)
+
+commit aba13bad739be95fcc06f5a69fe38a48509f68fe
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:31:46 2026 -0400
+
+    curl-prgrs: append --continue-at 0 to the header probe
+
+    - last-resume-wins cancels a caller -C/-C100 the stripper cannot catch;
+      otherwise the HEAD sends a Range, a 206 gives a partial Content-Length,
+      and the full body then trips a false 114
+
+commit 61cd2f0b1831562c6a05862276da57471e97855d
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:06:56 2026 -0400
+
+    curl-prgrs: pass header --output ahead of caller args
+
+    - curl pairs output options to URLs left-to-right, so ours claims the
+      URL first and a caller output option (incl. bundled -LO the stripper
+      cannot catch) is a harmless extra, not a hijack of the HEAD probe
+    - drops the per-spelling strip enumeration; ordering is the robust guard
+
+commit 74a029db8d098e7443c5ee0258de49cecc5a9ceb
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 07:40:06 2026 -0400
+
+    curl-prgrs: strip all output opts from header probe
+
+    - curl pairs a surviving output option to the URL ahead of the
+      appended --output, hijacking the HEAD probe into the user's file;
+      now also drops -O/--remote-name, attached -oVAL/-CVAL, --output=VAL
+
+commit ac502d08bde9bcd8c9d7cc5c4272a073241bd701
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 04:37:38 2026 -0400
+
+    detect-software-rendering: fix nvidia_node_present return
+
+    - a trailing no-op 'true "INFO..."' clobbered the '[ -e ]' result, so
+      nvidia_node_present always returned true -> no-DRM short-circuit
+      never fired and eglinfo ran on every headless system
+
+commit 61881e42797973dc5f157bf4001d858990070d8b
+Merge: c8d54337 38e2a24c
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 04:36:08 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master' into ai
+
+commit c8d54337d65504e809b3d06b00af71912fb17907
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 01:45:34 2026 -0400
+
+    curl-prgrs: create temp dir after check_variables
+
+    - exit 57 (config error) fires before traps_enable arms the cleanup
+      trap, so creating the mktemp dir in initialize_variables leaked it
+
+commit 38e2a24cb86f3f0afc4471e430d016af070cd7d4
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 23 05:49:20 2026 +0000
+
+    bumped changelog version
+
 commit 3cf089302bf529eff5206247f92205a6434fc95b
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Sun Aug 23 01:36:19 2026 -0400
