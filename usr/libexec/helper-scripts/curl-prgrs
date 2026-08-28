@@ -99,6 +99,15 @@ initialize_variables() {
   : "${curl_prgrs_print_progress:="yes"}"
   percent_last=""
 
+  expected_header_size=8000
+  maximum_http_header_size=32000
+}
+
+## Create the temp dir and derive the status / curl-pid file paths. Called in
+## main() only AFTER check_variables, so an early config-error exit (57) never
+## creates an ownerless /tmp/tmp.* dir: the cleanup EXIT trap is installed later
+## still (traps_enable), so anything created here must be guarded by it.
+initialize_temporary_files() {
   temp_dir_auto_generated=true
   temporary_directory="$(mktemp --directory)"
 
@@ -114,9 +123,6 @@ initialize_variables() {
   # signal traps can actually kill the in-flight download -- otherwise a SIGTERM
   # to this script leaves curl running.
   curl_pid_file="${temporary_directory}/curl.pid"
-
-  expected_header_size=8000
-  maximum_http_header_size=32000
 }
 
 check_variables() {
@@ -400,19 +406,41 @@ classify_download_size() {
   printf '%s' 0
 }
 
+# The content-length ceiling classify_download_size must enforce for the current
+# phase. Body phase: the advertised Content-Length. Header phase:
+# curl_prgrs_content_length is only an estimate (expected_header_size), so
+# enforcing it as a ceiling would fail a legitimate large header with 114; the
+# genuine header limit is the hard cap (max_bytes), so return that -- keeping the
+# over-cap 81 (endless-data) check while removing the false 114 in the header
+# phase. Pure and strict-mode free.
+content_length_ceiling_for_phase() {
+  local header_download="$1"
+  local advertised="$2"
+  local max_bytes="$3"
+
+  if [ "${header_download}" = "true" ]; then
+    printf '%s' "${max_bytes}"
+    return 0
+  fi
+  printf '%s' "${advertised}"
+}
+
 # After curl exits, re-read the final on-disk size and re-apply the endless-data
 # ceilings to it. The last size the poll loop observed can lag the bytes curl
 # flushed in the window between that poll and the 'kill -0' that saw curl gone,
 # which would misreport a complete download as truncated (115); re-checking the
 # ceilings also catches an over-limit final write the loop never polled. Updates
 # size_file_downloaded_bytes in the caller (read by the truncation check).
+# The content-length ceiling to enforce is passed in ($1): the body phase uses
+# the advertised length, the header phase the hard cap (see curl_download).
 enforce_final_size() {
+  local content_length="$1"
   if [ ! -f "${CURL_OUT_FILE}" ]; then
     return 0
   fi
   size_file_downloaded_bytes="$(stat -c "%s" -- "${CURL_OUT_FILE}")"
   local size_check_code
-  size_check_code="$(classify_download_size "${size_file_downloaded_bytes}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" "${curl_prgrs_content_length}")"
+  size_check_code="$(classify_download_size "${size_file_downloaded_bytes}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" "${content_length}")"
   if [ "${size_check_code}" != "0" ]; then
     curl_exit "${size_check_code}"
   fi
@@ -437,15 +465,27 @@ curl_download() {
     curl_exit 116
   fi
 
+  ## header_download: both in-file call sites set it via env prefix; default it
+  ## for a direct sourced caller. "false" is the safe default -- it keeps the 115
+  ## truncation check below ENABLED, since skipping it would let a short download
+  ## pass. It also selects the content-length ceiling below.
+  : "${header_download:="false"}"
+
+  ## Header phase enforces the hard cap, not the estimate (see
+  ## content_length_ceiling_for_phase); the body phase keeps the advertised length.
+  local content_length_ceiling
+  content_length_ceiling="$(content_length_ceiling_for_phase \
+    "${header_download}" "${curl_prgrs_content_length}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}")"
+
   while true ; do
     if [ -f "${CURL_OUT_FILE}" ]; then
       size_file_downloaded_bytes="$(stat -c "%s" -- "${CURL_OUT_FILE}")"
 
       true "size_file_downloaded_bytes: ${size_file_downloaded_bytes}"
       true "CURL_PRGRS_MAX_FILE_SIZE_BYTES: ${CURL_PRGRS_MAX_FILE_SIZE_BYTES}"
-      true "curl_prgrs_content_length: ${curl_prgrs_content_length}"
+      true "content_length_ceiling: ${content_length_ceiling}"
 
-      size_check_code="$(classify_download_size "${size_file_downloaded_bytes}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" "${curl_prgrs_content_length}")"
+      size_check_code="$(classify_download_size "${size_file_downloaded_bytes}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" "${content_length_ceiling}")"
       if [ "${size_check_code}" != "0" ]; then
         curl_exit "${size_check_code}"
       fi
@@ -467,13 +507,10 @@ curl_download() {
   done
 
   ## curl already terminated.
-  enforce_final_size
+  enforce_final_size "${content_length_ceiling}"
 
-  ## Both in-file call sites pass 'header_download=' as a per-call env prefix,
-  ## but this is a SOURCED library and an external caller need not. Defaulting
-  ## to "false" keeps the truncation check below ENABLED for such a caller --
-  ## the safe direction, since skipping it would let a short download pass.
-  : "${header_download:="false"}"
+  ## header_download is defaulted to "false" above (before the poll loop), so the
+  ## truncation check below stays ENABLED for a direct sourced caller too.
   : "${size_file_downloaded_bytes:=""}"
   if is_whole_number "${size_file_downloaded_bytes}" ; then
     true "size_file_downloaded_bytes: ${size_file_downloaded_bytes}"
@@ -496,6 +533,14 @@ remove_argument_for_header_request() {
   local skip_next=false
   header_arguments=()
 
+  ## Best-effort strip of the user's output/resume options for the header probe.
+  ## This drops the exact '-o'/'--output'/'-C'/'--continue-at' spellings to keep
+  ## the probe's argv clean; it deliberately does NOT try to enumerate every curl
+  ## output-option form (attached '-ofile', bundled '-LO', '--output=x', ...) --
+  ## that way lies a curl-argv parser. The ROBUST guarantee that the probe writes
+  ## only to the header file lives in run_download, which passes ITS '--output'
+  ## ahead of these args so curl pairs the header file to the URL first (any
+  ## surviving user output option becomes a harmless extra).
   for arg_item in "$@"; do
     if [ "${skip_next}" = true ]; then
       skip_next=false
@@ -580,9 +625,27 @@ run_download() {
   ## CURL_PRGRS_EXEC="" to avoid a progress bar for the header download.
   ## That would confuse yad.
   ##
-  ## CURL_OUT_FILE and
-  ## --output "$header_file" to avoid overwriting files when using "--continue-at -".
-  ## '--write-out' will echo.
+  ## Write the HEAD response to "$header_file", never the caller's file. Our
+  ## '--output' goes FIRST -- BEFORE "${header_arguments[@]}" -- because curl pairs
+  ## output options to URLs left-to-right: ours claims the URL, so a caller output
+  ## option (any spelling: '-o'/'-O'/'-LO'/'-ofile', which no simple strip catches)
+  ## becomes a harmless "more output options than URLs" extra rather than diverting
+  ## the probe into the caller's file. Placing it first (a prepend, never an append)
+  ## also keeps it valid when the caller uses '--': it is parsed before the caller's
+  ## end-of-options marker. '--write-out' echoes the Content-Length to stdout.
+  ##
+  ## Residual, deliberately NOT chased -- the probe SHARES the caller's argv, and
+  ## defusing every way a caller option can influence it needs either a curl
+  ## option-grammar parser or a probe redesign, both out of scope. A positional
+  ## override only works where curl's own precedence allows it WITHOUT breaking the
+  ## caller's '--' (an append past '--' becomes a bogus URL), which is true for the
+  ## output pairing above but NOT for last-wins options. Known residuals, all
+  ## pre-existing: a caller '--write-out'/'-w' overrides ours (last wins) so the
+  ## probe can read the wrong value; an ATTACHED resume offset ('-C100'/'-C-')
+  ## forces a Range whose 206 can report a partial Content-Length (the space forms
+  ## '-C -' / '-C 100' ARE stripped above); '--output-dir' reprefixes our
+  ## '--output'; a '.curlrc' 'output' can claim the URL. These need a caller that
+  ## does not pass such options to a single-download progress wrapper.
   curl_prgrs_content_length="$(
     header_download="true" \
     curl_prgrs_content_length="${expected_header_size}" \
@@ -592,8 +655,8 @@ run_download() {
       curl_download \
         --head \
         --write-out '%header{Content-Length}' \
-        "${header_arguments[@]}" \
         --output "${header_file}" \
+        "${header_arguments[@]}" \
     )"
 
   ## Reset from previews invocation of curl_download, which calls print_progress.
@@ -645,8 +708,12 @@ main() {
   shopt -s shift_verbose
   export LC_ALL=C
 
+  ## Create the temp dir ONLY AFTER check_variables, so a config-error exit 57
+  ## never leaves an ownerless /tmp/tmp.* dir (the cleanup trap is not installed
+  ## yet at that point).
+  ##
   ## Register the shutdown traps ONLY AFTER initialization and validation. The
-  ## trap reads variables that initialize_variables sets (statusfile,
+  ## trap reads variables that initialize_temporary_files sets (statusfile,
   ## temporary_directory, ...), and its status-file logic would otherwise turn a
   ## setup failure into a generic error: check_variables' documented 'exit 57'
   ## for a missing CURL_OUT_FILE would be masked to 112 (no status file yet), and
@@ -654,6 +721,7 @@ main() {
   initialize_terminal
   initialize_variables
   check_variables
+  initialize_temporary_files
   traps_enable
   run_download "$@"
 }

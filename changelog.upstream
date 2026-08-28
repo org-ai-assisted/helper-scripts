@@ -1,9 +1,640 @@
+commit 809afda1d67332bb583ccd4f4761d9c91bb9d549
+Merge: 38e2a24c b5c9a3f5
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Tue Aug 25 09:47:04 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/org-ai-assisted/ai'
+
+commit b5c9a3f53ea415ab2eaa4c81310afc2b716d10d8
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Mon Aug 24 23:31:04 2026 -0400
+
+    ci: drop orphaned consumer-secrets-audit.yml (reusable decommissioned)
+
+commit 67efddd7629c1d58b392c0482ea7fe5d4009c84c
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Mon Aug 24 23:31:02 2026 -0400
+
+    ci: drop orphaned consumer-codex-review.yml (reusable decommissioned)
+
+commit cff50f8437e78710f14b5f360eb910255dd6bde8
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Mon Aug 24 23:31:00 2026 -0400
+
+    ci: drop orphaned consumer-claude-code.yml (reusable decommissioned)
+
+commit eb8aef1afcbecb1dd7159c994e080e0e4bbb84e5
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:55:23 2026 -0400
+
+    curl-prgrs: document header-probe argv residuals
+
+commit 2be94350bbfb6a0f99a81f2458764aca81b1186f
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:45:52 2026 -0400
+
+    curl-prgrs: drop header-probe --continue-at 0
+
+    - appending it re-broke '-- URL': tokens after the caller's end-of-options
+      '--' become bogus URLs (curl exit 116/3). output-first alone is
+      --safe and defuses the output hijack; an attached '-C100' resume is a
+      documented residual (needs a curl option-grammar parser to defuse)
+
+commit aba13bad739be95fcc06f5a69fe38a48509f68fe
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:31:46 2026 -0400
+
+    curl-prgrs: append --continue-at 0 to the header probe
+
+    - last-resume-wins cancels a caller -C/-C100 the stripper cannot catch;
+      otherwise the HEAD sends a Range, a 206 gives a partial Content-Length,
+      and the full body then trips a false 114
+
+commit 61cd2f0b1831562c6a05862276da57471e97855d
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:06:56 2026 -0400
+
+    curl-prgrs: pass header --output ahead of caller args
+
+    - curl pairs output options to URLs left-to-right, so ours claims the
+      URL first and a caller output option (incl. bundled -LO the stripper
+      cannot catch) is a harmless extra, not a hijack of the HEAD probe
+    - drops the per-spelling strip enumeration; ordering is the robust guard
+
+commit 74a029db8d098e7443c5ee0258de49cecc5a9ceb
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 07:40:06 2026 -0400
+
+    curl-prgrs: strip all output opts from header probe
+
+    - curl pairs a surviving output option to the URL ahead of the
+      appended --output, hijacking the HEAD probe into the user's file;
+      now also drops -O/--remote-name, attached -oVAL/-CVAL, --output=VAL
+
+commit ac502d08bde9bcd8c9d7cc5c4272a073241bd701
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 04:37:38 2026 -0400
+
+    detect-software-rendering: fix nvidia_node_present return
+
+    - a trailing no-op 'true "INFO..."' clobbered the '[ -e ]' result, so
+      nvidia_node_present always returned true -> no-DRM short-circuit
+      never fired and eglinfo ran on every headless system
+
+commit 61881e42797973dc5f157bf4001d858990070d8b
+Merge: c8d54337 38e2a24c
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 04:36:08 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master' into ai
+
+commit c8d54337d65504e809b3d06b00af71912fb17907
+Author: claude (dev306 4e9178c5-4f21-4c1a-8e35-4363bae74d00) <noreply@anthropic.com>
+Date:   Mon Aug 24 01:45:34 2026 -0400
+
+    curl-prgrs: create temp dir after check_variables
+
+    - exit 57 (config error) fires before traps_enable arms the cleanup
+      trap, so creating the mktemp dir in initialize_variables leaked it
+
+commit 38e2a24cb86f3f0afc4471e430d016af070cd7d4
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 23 05:49:20 2026 +0000
+
+    bumped changelog version
+
+commit 3cf089302bf529eff5206247f92205a6434fc95b
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 23 01:36:19 2026 -0400
+
+    comment
+
+commit 8e8b57541ddd9cadacedaaf62d266445a12fe14b
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 23 01:32:30 2026 -0400
+
+    debugging
+
+commit 7d0740646d8fbf5ffc9675225c8bab84f3907eed
+Merge: acec1b56 5a4a7f22
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 23 01:22:37 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai'
+
+commit 5a4a7f22451f10898a8f1b66e72c247dc0546a4b
+Merge: 596210ab acec1b56
+Author: claude (dev285 a938198d-a8f0-4914-b2ff-fb0c012b3683) <noreply@anthropic.com>
+Date:   Sun Aug 23 01:19:46 2026 -0400
+
+    Merge branch 'master' into ai
+
+commit acec1b56e5a71b507deda0975ad6b9fb891bc9d8
+Merge: eae2bac0 64b4df4f
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 23 01:12:53 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/org-ai-assisted/ai'
+
+commit 596210ab53c546fb1dfe1256767edfbd3fbcbc76
+Author: claude (dev285 a938198d-a8f0-4914-b2ff-fb0c012b3683) <noreply@anthropic.com>
+Date:   Sun Aug 23 00:41:16 2026 -0400
+
+    curl-prgrs: extract phase ceiling as pure fn
+
+    Pull the header-vs-body content-length ceiling selection out of curl_download
+    into content_length_ceiling_for_phase, so it is source-able and formally
+    verifiable (dist-ai T4). Behavior-preserving.
+
+commit 4b6d6357eefdd144a539dfba71661a7908b3e843
+Author: claude (dev285 a938198d-a8f0-4914-b2ff-fb0c012b3683) <noreply@anthropic.com>
+Date:   Sun Aug 23 00:24:01 2026 -0400
+
+    detect-software-rendering: honor LIBGL software flag
+
+    LIBGL_ALWAYS_SOFTWARE is a deliberate user/admin directive (nothing in the OS
+    sets it); honor the intent regardless of driver -- report software without
+    probing. Matches the consumer (forces software QML) and is crash-safe.
+
+commit 7a1505e217cf941392ec8f91ddb84a7423a6ba81
+Author: claude (dev285 a938198d-a8f0-4914-b2ff-fb0c012b3683) <noreply@anthropic.com>
+Date:   Sun Aug 23 00:13:03 2026 -0400
+
+    detect-software-rendering: hardware wins across EGL platforms
+
+    eglinfo -B prints a renderer line per platform; one falling back to llvmpipe
+    must not mask another reporting the GPU. Classify each line (software marker
+    wins over a vendor substring within a line) and let hardware win across them.
+
+commit 3cc4baad7c6c1b6467896b81c0e8101601f7f1a7
+Author: claude (dev285 a938198d-a8f0-4914-b2ff-fb0c012b3683) <noreply@anthropic.com>
+Date:   Sat Aug 22 23:49:56 2026 -0400
+
+    detect-software-rendering: fix renderer misclassification
+
+    - Match software markers (llvmpipe/swrast/"Software Renderer"/"Basic Render
+      Driver") before the vendor list, and vendor tokens whole-word: else "Apple
+      Software Renderer", WARP D3D12 and "ATI" inside "NATIVE" read as accelerated.
+    - LIBGL_ALWAYS_SOFTWARE is Mesa-only; do not short-circuit to software when an
+      NVIDIA node is present (NVIDIA ignores it) -- probe the real renderer instead.
+
+commit 45fefb1213053f57555c0a7d16cc467b41bab7e0
+Author: claude (dev285 a938198d-a8f0-4914-b2ff-fb0c012b3683) <noreply@anthropic.com>
+Date:   Sat Aug 22 23:49:53 2026 -0400
+
+    curl-prgrs: header uses hard cap, not the estimate
+
+    Header-phase curl_prgrs_content_length is expected_header_size (an estimate);
+    enforce_final_size ran it as a hard ceiling, failing a legitimate large-header
+    response (long redirects, big Set-Cookie) of 8001..32000 bytes with 114. Enforce
+    only maximum_http_header_size there; the body phase keeps the advertised length.
+
+commit 679939ab59fb591f2003125ccac66d105e458423
+Merge: 64b4df4f eae2bac0
+Author: claude (dev285 a938198d-a8f0-4914-b2ff-fb0c012b3683) <noreply@anthropic.com>
+Date:   Sat Aug 22 22:55:35 2026 -0400
+
+    Merge branch 'master' into ai
+
+commit eae2bac0affadae2d8af16e828ebe4f5a8b2e9e8
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sat Aug 22 05:05:18 2026 -0400
+
+    output
+
+commit 64b4df4facf7a8b421241bb837bd50de76c87508
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 15:04:52 2026 -0400
+
+    curl-prgrs: also fail closed on a clean exit carrying a non-zero code
+
+    The clean 'exit' path can still carry a non-zero code -- 'exit ${wait_exit_code}'
+    after a failed wait, which does NOT trip ERR -- while the status file holds 0.
+    The signal-only guard would report success. Guard on the exit code too: only a
+    clean 'exit' with exit code 0 and a recorded 0 status reports success.
+
+    coderabbit (major, functional-correctness); verified: the old code AND the
+    signal-only fix both report 0 for exit+status0+code5, this reports 110.
+
+commit 82414bba8829866b37b2febebc61ba3f2cc01d73
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 14:54:03 2026 -0400
+
+    curl-prgrs: fail closed on a signal-driven shutdown with a 0 status file
+
+    shutdown() converted a recorded-0 status to the generic 110 only for the ERR
+    signal (via is_err). SIGTERM/SIGINT/SIGHUP left it at 0, so a signal arriving
+    after a successful header curl_exit recorded 0 -- during content-length
+    validation, before the body completes -- exited 0, reporting SUCCESS for a
+    download killed mid-flight. That contradicts the function's own stated intent
+    ("reached abnormally -> assume non-zero") and is a false-success in a
+    download-integrity tool.
+
+    Key the guard off the signal instead: any signal but the clean 'exit' with a
+    recorded 0 status resolves to 110. A recorded non-zero code still survives, and
+    the normal 'exit' path still reports success. is_err is now dead -- removed.
+
+    coderabbit via review-drain; verified. Regression tests land in dist-ai
+    (curl_prgrs suite: sigterm/sighup/sigint + status 0 -> 110).
+
+commit 1ff627826f06bdab278ae8b2f5a32b50cd79862d
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 10:34:24 2026 -0400
+
+    CI: add python3-z3 + a dist-ai fuzz lane for curl-prgrs
+
+    - python3-z3: the curl-prgrs formal-verification core suite
+      (helper-scripts-lib-tests-verify) hard-fails without it.
+    - dist-ai-fuzz.yml: run the dist-ai --fuzz suites (the curl-prgrs end-to-end
+      fuzz) on CI, not just --core.
+
+commit 4b0ca3b8016b6ac4957f832cadfb884e4a4450d8
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 09:27:22 2026 -0400
+
+    curl-prgrs: move the Atheris fuzz harness into dist-ai
+
+    Relocated to org-ai-assisted/dist-ai as helper-scripts-lib-tests-fuzz-atheris
+    (entrypoint) + fuzz_curl_prgrs.py. The other fuzz/ harnesses and the
+    ClusterFuzzLite wiring are unchanged.
+
+commit 486411d7e2d0d99d60228dbad69dfd223016b13a
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 07:42:05 2026 -0400
+
+    CI: add curl + ncurses-bin for the curl-prgrs test
+
+    curl-prgrs probes 'has curl' and 'has tput' at startup, so curl_prgrs_test.sh
+    (which drives the real curl-prgrs) FATALs on the debian:trixie-slim runner,
+    which ships neither. Add them to the dist-ai-tests apt-packages.
+
+commit 1048c6c56c6e4e9d496f1653678d5cae671342d1
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 07:30:51 2026 -0400
+
+    curl-prgrs: clear the published curl PID on curl_exit (ai-review)
+
+    Prevents the main shell's later EXIT-trap shutdown from re-reading a reaped curl
+    PID and SIGKILL-ing an unrelated process that reused it. The SIGTERM path never
+    reaches curl_exit, so the live PID stays published there for the real kill.
+    Documents the sub-millisecond publication race as an accepted residual (it
+    degrades to the pre-fix behaviour, never worse).
+
+commit 80fcd5716136c3af706599b9492ac626eb159d62
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 07:20:07 2026 -0400
+
+    curl-prgrs: make SIGTERM reliably stop the download
+
+    The backgrounded curl runs in a subshell, so its PID was never visible to the
+    main shell: a SIGTERM to the script could not kill curl, and whether the
+    download actually stopped depended purely on a poll-timing race (it usually did
+    not). The worker now publishes curl's real PID to a file in the temp dir; the
+    main shell's shutdown reads it (before removing the dir) and kills curl. SIGTERM
+    now stops the in-flight download at any poll interval.
+
+commit d1175e4d56865978e856f81ccab386f09b9775a8
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 06:12:09 2026 -0400
+
+    curl-prgrs: address ai-review round 2
+
+    - Register the shutdown traps only AFTER initialization and validation, so a
+      setup failure (check_variables' documented 'exit 57' for an empty
+      CURL_OUT_FILE) reaches the caller instead of being masked to 112 by the EXIT
+      trap, and no trap fires before statusfile is assigned.
+    - fuzz: constrain generated sizes to the production 16-digit bound so the Python
+      port is not compared against Bash 64-bit overflow outside the real input
+      domain (the invariant only holds where the production code actually operates).
+
+commit d624f31945577ddbac7c8cb2968511faf5ae1222
+Author: claude (dev274 aada173d-bfff-4807-a8ad-2c23a8edd136) <noreply@anthropic.com>
+Date:   Fri Aug 21 05:26:09 2026 -0400
+
+    curl-prgrs: source-able, correctness fixes, Atheris fuzz
+
+    - Make source-able (was_executed guard; strict-mode moved into main()).
+    - Extract pure seams: compute_percent, classify_download_size, stderr_is_tty,
+      enforce_final_size, run_body_download.
+    - Fix print_progress division-by-zero on Content-Length 0 / empty file
+      (compute_percent maps length 0 to 100).
+    - Fix exit-code masking: shutdown lets the specific curl_exit code (81
+      too-large / 114 / 115 / 116) reach the caller instead of a generic 110/112;
+      temp-dir cleanup runs only in the main shell (BASHPID guard) so a worker
+      subshell's shutdown does not delete the status file the parent reads.
+    - Reset the status file between the header and body phases so a body worker
+      that dies WITHOUT curl_exit (a failed CURL_PRGRS_EXEC hook / stat) reports an
+      error, not the header's stale success.
+    - Fix false truncation (115): re-stat the final size after curl exits
+      (enforce_final_size) and re-apply the endless-data ceilings.
+    - Reject an implausibly large advertised Content-Length (>16 digits) before it
+      overflows Bash 64-bit arithmetic.
+    - stat: add '--' so an output path starting with '-' is not read as an option.
+    - Add fuzz/fuzz_curl_prgrs.py (Atheris) over the pure decision functions,
+      instrumented for coverage feedback.
+
+commit 1960b30b32b994331dee786aa07082c8e4dd188e
+Author: claude (dev272 e8b76afb-795c-4739-8ebd-023de854021e) <noreply@anthropic.com>
+Date:   Fri Aug 21 05:02:48 2026 -0400
+
+    helper-scripts: drop redundant duplicate 'set -o pipefail'; clear R-010/R-161 debt
+
+    - anondate, anondate-get, leaktest, lsmod-deterministic: remove the redundant
+      second 'set -o pipefail' repeated after 'shopt -s shift_verbose'.
+    - Complete the R-010 strict block (export LC_ALL=C) on all four.
+    - anondate: grep '-qs' -> '--quiet --no-messages' (R-161 long flags).
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 743d1130418feb43868fa67eac54a52ba42d675e
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Fri Aug 21 08:59:17 2026 +0000
+
+    bumped changelog version
+
 commit ecea07a54e8de0a46ba8c05ddf7fd15d32d0265a
 Merge: 2bf741ef 526a31af
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Fri Aug 21 04:46:43 2026 -0400
 
     Merge remote-tracking branch 'org-ai-assisted/ai'
+
+commit 1937e1bfcac6370545b95d2d961a3f18bf163882
+Author: claude (dev272 e8b76afb-795c-4739-8ebd-023de854021e) <noreply@anthropic.com>
+Date:   Fri Aug 21 04:30:04 2026 -0400
+
+    anondate-set: source has.sh via HELPER_SCRIPTS_PATH; complete R-010 strict block
+
+    - Line 25 sourced has.sh by a bare absolute path while the strings.bsh source
+      below already used "${HELPER_SCRIPTS_PATH:-}"; make has.sh match so the dist-ai
+      tests can override the base. In-repo self-source; no SC1091 disable involved.
+    - Add 'export LC_ALL=C' to complete the R-010 strict block (gate requirement).
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit ffb2521172295e0eff2ae980d2c669b0c270a86f
+Author: claude (timeout-killafter d50d9c38-4cd2-4f05-9701-008cbe107399) <noreply@anthropic.com>
+Date:   Thu Aug 20 09:41:43 2026 -0400
+
+    detect-software-rendering: timeout --kill-after so a wedged eglinfo dies
+
+    A bare 'timeout 5' sends only SIGTERM; an eglinfo wedged in a syscall
+    can ignore it and run forever, defeating the bound. --kill-after=5
+    follows with SIGKILL 5s later to guarantee the child dies.
+
+commit 8068395a5c431cb85c27406b3e08ca00050f0951
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 09:00:33 2026 -0400
+
+    detect-software-rendering: early-return unknown when eglinfo is absent
+
+    Flatten the 'if has eglinfo; then ... fi' wrapper into an explicit early return: a
+    GPU node present but no eglinfo -> unknown, rather than falling through to run the
+    vendor/llvmpipe greps on an empty string. Same result, clearer intent, one less
+    indent level.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit e834fa9369b5f3aaeeb689e594adf2bb3ccacca3
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 08:23:31 2026 -0400
+
+    detect-software-rendering: drop the cache; always re-evaluate
+
+    A GPU node can appear (NVIDIA on-demand, eGPU/DisplayLink/VM hot-add) and disappear
+    (unplug, VM device_del) within a boot, so any per-boot snapshot goes stale in one
+    direction or the other. The cache's original purpose -- avoiding the ~5s eglinfo
+    hang per login -- is already covered by the short-circuits (no-GPU is instant) and
+    the DISPLAY-unset fix (eglinfo no longer hits the hanging X11 path, ~0.1s), so
+    caching now saves ~nothing while risking a stale 'accelerated' after a detach.
+    Re-evaluate on every call. gpu_node_present() stays (the short-circuit uses it).
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit b544c7ae7e9d0296ff65c6a14998cfe9a2612e0a
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 07:57:04 2026 -0400
+
+    detect-software-rendering: only cache a verdict from the eglinfo probe
+
+    NVIDIA device nodes are created on demand (first GL client), and eGPU / DisplayLink
+    / VM GPU hot-add can add a /dev/dri node -- so an early login (console/ssh, before
+    any GL client) can see no node and cache a stale 'software' for the rest of the
+    boot. Cache only when a GPU node was present at probe time (the expensive eglinfo
+    path); the free no-node short-circuit is recomputed every shell, so a GPU that
+    appears later this boot is re-detected. Extract the node check into
+    gpu_node_present(), shared by the short-circuit and the cache gate.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit a4622538a2f0afcc3018461ec850f645d642481a
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 07:33:06 2026 -0400
+
+    detect-software-rendering: do not cache when LIBGL_ALWAYS_SOFTWARE set
+
+    The marker name encodes only the result, not the inputs. LIBGL_ALWAYS_SOFTWARE is
+    a per-environment override: caching a forced-software result would return it to a
+    later shell that does not set the var (and the reverse). Skip the cache when it is
+    set -- the LIBGL short-circuit is instant, so this costs nothing. (ai-review)
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit cd67746d2730e609c8fd6504a4efdf0462a72ecc
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 07:06:56 2026 -0400
+
+    detect-software-rendering: cache dir falls back to /run/user/<uid>
+
+    Use ${XDG_RUNTIME_DIR:-/run/user/${UID}} for the per-boot cache dir: the env var
+    when present (respects the spec / an override), else the canonical path logind
+    creates when the var is not propagated. Not GUI-specific -- logind sets this for
+    console and ssh sessions too. Require the dir to exist and be writable, else skip
+    caching. Avoids /tmp (not per-boot, shared, symlink surface) and ~/.cache
+    (persists across reboots -> stale after a driver change).
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit b4032a578b1e7ddb1197fcd6fc194f7cab8dd4b4
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 07:00:58 2026 -0400
+
+    detect-software-rendering: NVIDIA guard + unset DISPLAY for eglinfo
+
+    - The no-DRM-node -> software short-circuit now also requires no NVIDIA control
+      node (/dev/nvidiactl): proprietary NVIDIA (classic GLX) renders via
+      /dev/nvidia*, not a DRM node, so its presence falls through to the probe rather
+      than a wrong 'software'. Makes the general-purpose helper correct on bare-metal
+      NVIDIA; no effect on VMs (accelerated VM GPUs create /dev/dri). Path overridable
+      (DETECT_SOFTWARE_RENDERING_NVIDIA_CTL) for tests.
+    - Run eglinfo with DISPLAY/WAYLAND_DISPLAY unset: eglinfo's only blocking path is
+      the X11/Wayland platform connecting to a wedged display server; unset those and
+      the renderer still comes from the surfaceless/GBM/device platforms. Removes the
+      hang at its source; the timeout stays as a backstop.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit d565ff7ae3171b3e8e69f25d06aef7f5568c2dd6
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 06:48:51 2026 -0400
+
+    detect-software-rendering: filename cache; --fixed-strings throughout
+
+    - Cache the per-boot result as a marker-file NAME
+      (${XDG_RUNTIME_DIR}/detect-software-rendering.<result>): a cache hit is a
+      filename test ('[ -e ]'), a write is a 'touch' -- no file content to read back.
+    - grep --fixed-strings for the renderer-line and llvmpipe matches too, so every
+      pattern in this script is a literal string, never a regex.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit b24d568e0b95c72af399a85e9c94c00d075caccf
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 06:36:12 2026 -0400
+
+    detect-software-rendering: fast-exit before eglinfo; correct the hang cause
+
+    Add two zero-cost, hang-free short-circuits to probe_renderer before eglinfo:
+    LIBGL_ALWAYS_SOFTWARE truthy -> software, and no DRM node
+    (/dev/dri/renderD* or card*) -> software. Only a present DRM node reaches
+    eglinfo. On a Kicksecure VM (LIBGL_ALWAYS_SOFTWARE=1, no /dev/dri) this resolves
+    to a confident 'software' in microseconds with no GL probe and no hang surface.
+    It short-circuits toward software only on unambiguous evidence, preserving the
+    conservative bias. The DRM dir is overridable (DETECT_SOFTWARE_RENDERING_DRI_DIR)
+    for tests.
+
+    Correct the comment: eglinfo's GBM/Wayland/device probes FAIL FAST without a DRM
+    node -- they do not hang. The one blocking path is the X11 platform connecting to
+    $DISPLAY against a half-started X server (this fragment runs from Xsession.d
+    during login); the timeout guard covers that residual case.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 5e802b4406275bcfb149d3920109fcd5ac89a2fd
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 06:26:54 2026 -0400
+
+    detect-software-rendering: bump copyright to 2026 (modified this year)
+
+commit f085945ad97b262197641cdbdd7fe9d473fe8e3e
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 05:27:24 2026 -0400
+
+    detect-software-rendering: cache the per-boot result in XDG_RUNTIME_DIR
+
+    The renderer is a per-boot property and the eglinfo probe can cost the full
+    timeout on a headless VM, yet profile.d calls this on every login shell. Cache
+    the classification in ${XDG_RUNTIME_DIR}/detect-software-rendering.cache (a
+    per-boot tmpfs): only the first shell after boot probes, later shells read the
+    cache. Best-effort -- an unset or unwritable XDG_RUNTIME_DIR just probes every
+    time. The eglinfo probe moves to a pure probe_renderer() helper.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 43f149255a0982a751f7a1e32e9c8af5793e56b4
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 05:10:27 2026 -0400
+
+    detect-software-rendering: strict-in-main; pure detect_software_rendering
+
+    Canonical source-able form: main() owns the strict-mode block and is the only
+    auto-run entry (via was_executed). detect_software_rendering() is pure and
+    strict-mode free, so a unit test or a script reusing the guess can source this
+    file and call the function without inheriting strict-mode. The eglinfo probe,
+    timeout bound and 3-way return are unchanged.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit ff2df5f06be88e26c9784baec9429a202066d2d8
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 04:35:34 2026 -0400
+
+    onion-time-pre-script: move no-strict waiver below the Copyright header
+
+    Keep the attribution header leading the file (R-002).
+
+commit 362e582a6b3ec268acceff143ed5fb1c4b3e1574
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 04:25:23 2026 -0400
+
+    detect-software-rendering: drop redundant waiver and '|| exit'
+
+    - Copyright header first; no comment above it.
+    - Remove the '## style-ok: no-strict' waiver: strict lives inside the
+      'was_executed' guard, which the gate already recognises (zero column-0 strict
+      plus a was_executed call), so the waiver was redundant.
+    - Drop '|| exit "${?}"' on the auto-run call: errexit (shebang and guard)
+      propagates the function's non-zero return as the script exit status.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 0e938a25b006afb0e0da3cb1d53dd662e679e9ea
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 04:00:07 2026 -0400
+
+    detect-software-rendering: errexit on shebang for failed source
+
+    Strict mode is set inside the 'was_executed' guard, which runs after the
+    'source' lines, so a failed source (helper-scripts missing) went uncaught and
+    the script limped on with 'has'/'was_executed' undefined. Put 'errexit' on the
+    shebang: honoured on a direct run so a failed source aborts immediately, and
+    ignored when the file is sourced so no strict-mode leaks into the sourcing
+    shell.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 2e75d8a836323a51fc8659bd3581e999cf52ae6c
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 03:54:32 2026 -0400
+
+    detect-software-rendering: make source-able; timeout_maybe prefix
+
+    Wrap the logic in a detect_software_rendering() function that only auto-runs
+    under 'was_executed', so the file can be sourced (unit tests, or reuse of the
+    function) without running. Strict mode is moved inside the same 'was_executed'
+    guard so 'set -o errexit'/'nounset' cannot leak into a sourcing shell; a
+    '## style-ok: no-strict' waiver documents that the block is intentionally not at
+    column 0.
+
+    Replace the eglinfo-call if/else with a 'timeout_maybe' command prefix
+    ("timeout 5", or empty when timeout is somehow absent), word-split on purpose.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 0a287ca0d43785c99517674809cdfb05a01b274a
+Author: claude (dev254 629ffcaf-81f7-4498-8ca9-ec34dc26399d) <noreply@anthropic.com>
+Date:   Thu Aug 20 03:05:33 2026 -0400
+
+    detect-software-rendering: new best-effort GL renderer probe
+
+    Extract the eglinfo gathering and parsing out of vm-config-dist's
+    /etc/profile.d/20_software_rendering_in_vms.sh into a standalone helper, so
+    the bounded best-effort renderer guess has a single home and is reusable.
+
+    Runs `timeout 5 eglinfo -B` (eglinfo can hang forever on EGL/DRM probing in
+    headless VMs and Qubes AppVMs with no /dev/dri) and classifies the
+    "OpenGL core profile renderer" line:
+
+      software      exit 0   llvmpipe (mesa CPU renderer)
+      accelerated   exit 1   known hardware vendor renderer
+      unknown       exit 2   eglinfo absent / empty / timed out / unrecognized
+
+    Never authoritative: anything that is not a clear match is reported as
+    unknown rather than assumed.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 8359b9f923af054caeda7709f1d0e6fdbcafc6a9
+Author: claude (dev245 8a76e0ac-93ca-4b13-8547-3316e5df0d0b) <noreply@anthropic.com>
+Date:   Wed Aug 19 09:38:31 2026 -0400
+
+    git-review-driver: end-of-options guard on git submodule status
+
+    A diff_path that starts with '-' would be parsed as an option by
+    `git submodule status`, breaking the initialized-submodule check. Add the
+    `--` separator so the path is always a path. (ai-review: agy)
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 
 commit 526a31af943fe572e4873020eb224255ec9c2fb8
 Merge: b4eda921 2bf741ef
