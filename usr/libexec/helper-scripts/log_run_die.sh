@@ -17,6 +17,22 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 # shellcheck source=./trace.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/trace.bsh
 
+## stecho and sanitize-string are helper-scripts BINARIES (usr/bin), called as
+## bare commands below. Installed system-wide they are on PATH; run from a
+## source checkout (the derivative-maker build invokes this via sudo, which
+## resets PATH to secure_path) they are not -- but HELPER_SCRIPTS_PATH points at
+## the tree, so add its usr/bin. Deduplicated, and a no-op when installed.
+if [ -n "${HELPER_SCRIPTS_PATH:-}" ]; then
+  case ":${PATH:-}:" in
+    *":${HELPER_SCRIPTS_PATH}/usr/bin:"*)
+      ;;
+    *)
+      PATH="${HELPER_SCRIPTS_PATH}/usr/bin:${PATH:-}"
+      export PATH
+      ;;
+  esac
+fi
+
 if ! type_exists stecho sanitize-string; then
   printf '%s\n' "$0: ERROR: stecho and/or sanitize-string missing."
   printf '%s\n' "$0: INFO: function_trace:"
