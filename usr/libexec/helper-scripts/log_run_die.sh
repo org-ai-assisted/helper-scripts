@@ -17,24 +17,16 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 # shellcheck source=./trace.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/trace.bsh
 
-## stecho and sanitize-string are helper-scripts BINARIES (usr/bin), called as
-## bare commands below. Installed system-wide they are on PATH; run from a
-## source checkout (the derivative-maker build invokes this via sudo, which
-## resets PATH to secure_path) they are not -- but HELPER_SCRIPTS_PATH points at
-## the tree, so add its usr/bin. Deduplicated, and a no-op when installed.
-if [ -n "${HELPER_SCRIPTS_PATH:-}" ]; then
-  case ":${PATH:-}:" in
-    *":${HELPER_SCRIPTS_PATH}/usr/bin:"*)
-      ;;
-    *)
-      PATH="${HELPER_SCRIPTS_PATH}/usr/bin:${PATH:-}"
-      export PATH
-      ;;
-  esac
-fi
+## stecho + sanitize-string are helper-scripts BINARIES in usr/bin. Reference
+## them by absolute path via HELPER_SCRIPTS_PATH (as str_replace_tool does), so
+## they resolve from a source checkout too -- where they are NOT on PATH (the
+## build invokes consumers via sudo, which resets PATH). An empty
+## HELPER_SCRIPTS_PATH (installed) yields /usr/bin/<name>.
+stecho_bin="${HELPER_SCRIPTS_PATH:-}/usr/bin/stecho"
+sanitize_string_bin="${HELPER_SCRIPTS_PATH:-}/usr/bin/sanitize-string"
 
-if ! type_exists stecho sanitize-string; then
-  printf '%s\n' "$0: ERROR: stecho and/or sanitize-string missing."
+if [ ! -x "${stecho_bin}" ] || [ ! -x "${sanitize_string_bin}" ]; then
+  printf '%s\n' "$0: ERROR: stecho and/or sanitize-string missing ('${stecho_bin}', '${sanitize_string_bin}')."
   printf '%s\n' "$0: INFO: function_trace:"
   function_trace
   printf '%s\n' "$0: INFO: process_backtrace:"
@@ -162,7 +154,7 @@ log() {
     *)
       ## Avoid recursion into log() on unsupported type; print directly.
       #log bug "Unsupported log type specified: '${log_type}'"
-      stecho "${0##*/}: [${red}BUG${nocolor}]: Unsupported log type specified: '${log_type}'" >&2
+      "${stecho_bin}" "${0##*/}: [${red}BUG${nocolor}]: Unsupported log type specified: '${log_type}'" >&2
       die 1 "Please report this bug."
       return 0
       ;;
@@ -175,14 +167,14 @@ log() {
   fi
   log_level_colorized="[${log_color}${log_type_up}${nocolor}]"
   log_content="${*}"
-  log_content="$(printf '%s' "${log_content}" | sanitize-string -- "${LOG_MAX_LEN:-nolimit}")"
+  log_content="$(printf '%s' "${log_content}" | "${sanitize_string_bin}" -- "${LOG_MAX_LEN:-nolimit}")"
   ## error logs are the minimum and should always be printed, even if
   ## failing to assign a correct log type
   ## send bugs and error to stdout and stderr
   log_full="${log_source_script} ${log_who_ami_maybe-}${log_level_colorized}: ${log_content}"
   case "${log_type}" in
     bug|error)
-      stecho "${log_full}" >&2
+      "${stecho_bin}" "${log_full}" >&2
       return 0
       ;;
     null)
@@ -201,7 +193,7 @@ log() {
   fi
 
   if [ "${should_print}" = 1 ]; then
-    stecho "${log_full}" >&2
+    "${stecho_bin}" "${log_full}" >&2
   fi
 
   return 0
