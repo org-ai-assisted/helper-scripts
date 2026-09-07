@@ -263,8 +263,9 @@ log_run() {
   printf -v command_without_extraneous_spaces_temp '%q ' "${@}"
   command_without_extraneous_spaces="$(printf "%s\n" "${command_without_extraneous_spaces_temp}")"
 
-  ## TODO: rename variable to 'dry_run_skip_commands'. Potential footgun if used from other scripts.
-  if test "${dry_run:-}" = "1"; then
+  ## Skip the command (dry-run) only for callers that opt in via this specific
+  ## variable name, so an unrelated per-script 'dry_run' cannot trigger it.
+  if test "${dry_run_skip_commands:-}" = "1"; then
     log "${level}" "Skipping command (dry-run): $ ${command_without_extraneous_spaces}"
     return 0
   fi
