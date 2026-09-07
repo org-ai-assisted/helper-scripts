@@ -3,6 +3,11 @@
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## live_status_* are this script's eval-output interface: read by sourcing
+## callers, and when executed printed via ${!var_name}. shellcheck cannot see
+## that indirect use, so SC2034 would be a false positive.
+# shellcheck disable=SC2034
+
 true "$0: START"
 
 # shellcheck source=./check_runtime.bsh
@@ -23,6 +28,7 @@ if [ "${live_mode_sourced}" = 'false' ]; then
 #  set -o pipefail
   shopt -s inherit_errexit
   shopt -s shift_verbose
+  export LC_ALL=C
 fi
 
 ## TODO: Why do we disable pipefail here? There aren't any pipes in this
@@ -57,7 +63,9 @@ if [ -z "${kernel_cmdline+x}" ]; then
   fi
 fi
 
-writable_fs_lists_str="$(/usr/libexec/helper-scripts/get_writable_fs_lists.sh)"
+if [ -z "${writable_fs_lists_str+x}" ]; then
+  writable_fs_lists_str="$(/usr/libexec/helper-scripts/get_writable_fs_lists.sh)"
+fi
 readarray -t writable_fs_lists <<< "${writable_fs_lists_str}"
 IFS=' ' read -r -a safe_writable_fs_list <<< "${writable_fs_lists[0]:-}"
 IFS=' ' read -r -a danger_writable_fs_list <<< "${writable_fs_lists[1]:-}"
