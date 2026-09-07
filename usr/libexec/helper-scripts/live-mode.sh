@@ -25,18 +25,10 @@ if [ "${live_mode_sourced}" = 'false' ]; then
   set -o errexit
   set -o nounset
   set -o errtrace
-#  set -o pipefail
+  set -o pipefail
   shopt -s inherit_errexit
   shopt -s shift_verbose
   export LC_ALL=C
-fi
-
-## TODO: Why do we disable pipefail here? There aren't any pipes in this
-## script, so we shouldn't need to.
-was_pipefail_enabled='false'
-if [ -o pipefail ]; then
-  was_pipefail_enabled='true'
-  set +o pipefail
 fi
 
 if [ -z "${proc_mount_contents+x}" ]; then
@@ -184,10 +176,6 @@ else
   live_status_word_pretty="persistent"
   live_status_detected="false"
   live_status_maybe_iso_live_message=""
-fi
-
-if [ "${was_pipefail_enabled}" = 'true' ]; then
-  set -o pipefail
 fi
 
 if [ "${live_mode_sourced}" = 'false' ]; then
