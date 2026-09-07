@@ -64,7 +64,7 @@ To scan directories, use text-safety-scan-find.
 EOF
 }
 
-# shellcheck disable=SC2317  # reached via the EXIT trap, not a direct call
+# shellcheck disable=SC2317
 cleanup() {
   local _exit_code="${1:-$?}"
   trap - EXIT ERR
@@ -79,15 +79,7 @@ cleanup() {
   exit "${_exit_code}"
 }
 
-## Diagnostic ERR trap. Fires on unguarded non-zero exits (typo
-## like 'loxal var=foo', missing source, vanished binary). Logs
-## line + rc + command then returns; errexit terminates the script
-## and the EXIT trap (cleanup) prints the summary.
-##
-## Read the failing command's context from inside the handler: $? is the failed
-## rc, ${BASH_COMMAND} the command, and ${BASH_LINENO[0]} the CALLER's line (a
-## bare $LINENO here would resolve to on_err's own line).
-# shellcheck disable=SC2317  # reached via the ERR trap, not a direct call
+# shellcheck disable=SC2317
 on_err() {
   local rc=$? line="${BASH_LINENO[0]}" cmd="${BASH_COMMAND}"
   printf '%s\n' "ERROR: ${BASH_SOURCE[0]##*/}: line ${line}: command failed (rc=${rc}): ${cmd}" >&2
@@ -96,7 +88,6 @@ trap on_err ERR
 trap 'cleanup' EXIT
 
 ## Bump 'overall_exit' to the highest severity seen so far.
-##   2 (error)   wins over   1 (finding)   wins over   0 (clean).
 bump_exit() {
   local new="$1"
   if [ "${new}" -gt "${overall_exit}" ]; then
@@ -111,8 +102,7 @@ internal_error() {
   bump_exit 2
 }
 
-## Check for required external tools once at startup. A missing
-## plugin would otherwise emit one error per file.
+## Check for required external tools once at startup.
 check_deps() {
   local cmd
   for cmd in safe-rm sponge "${PLUGIN_LIST[@]}"; do
@@ -126,19 +116,8 @@ check_deps() {
 }
 
 ## Run every plugin in PLUGIN_LIST against a single target.
-##
-## $1 - 'file' or 'stdin' (mode keyword)
-## $2 - file path (when $1 = file; ignored otherwise)
-##
-## Plugins (unicode-show, modeline-show) do not parse flags of
-## their own:
-##   unicode-show  iterates argv and calls open(file_name)
-##   modeline-show forwards via grep -- "${file_name}"
-## A file_name starting with '-' therefore passes through both
-## layers safely.
 run_plugins_for_target() {
   local mode="$1"
-  ## 'file_name' (not 'file') so we don't shadow the 'file' command.
   local file_name="${2:-}"
   local plugin plugin_exit target_label
   local had_finding='false' had_error='false'
@@ -243,5 +222,4 @@ main() {
 
 main "$@"
 
-## Propagate the aggregated exit code through the EXIT trap.
 exit "${overall_exit}"

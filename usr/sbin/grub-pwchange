@@ -7,22 +7,13 @@ set -o errexit
 set -o nounset
 set -o errtrace
 set -o pipefail
-## Completes the R-010 set.
-##
-## Note what these do NOT add here: a failing grub-mkpasswd-pbkdf2 was already
-## caught, because pipefail makes the pipeline fail and that IS the command
-## substitution's status. inherit_errexit governs errexit INSIDE a subshell,
-## which is a different case. Measured, not assumed -- the behaviour is
-## identical with and without it.
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
 # shellcheck source=../libexec/helper-scripts/get_colors.sh
-# shellcheck disable=SC1091
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_colors.sh
 ## Provides get_password, which sets the 'password' variable read below.
 # shellcheck source=../libexec/helper-scripts/get_password.sh
-# shellcheck disable=SC1091
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_password.sh
 
 run_update_grub() {
@@ -72,9 +63,6 @@ https://www.kicksecure.com/wiki/Protection_Against_Physical_Attacks#grub-pwchang
 printf '%s' "Enter the new password for GRUB account '${user}': " >&2
 printf '%s\n' "" >&2
 get_password
-## 'password' is set by get_password, from the get_password.sh sourced above.
-## shellcheck cannot follow that source, so it cannot see the assignment.
-# shellcheck disable=SC2154
 first_input="${password}"
 printf '%s\n' "" >&2
 

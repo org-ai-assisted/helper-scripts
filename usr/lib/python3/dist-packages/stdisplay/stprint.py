@@ -15,6 +15,10 @@ def main() -> None:
     stdout.reconfigure(  # type: ignore
         encoding="ascii", errors="replace", newline="\n"
     )
+    ## End-of-options. The script doesn't support any options but this is good
+    ## for consistency. "printf" supports end-of-options, so this is sensible.
+    if len(argv) >= 2 and argv[1] == "--":
+        argv.pop(1)
     if len(argv) > 1:
         untrusted_text = "".join(argv[1:])
         stdout.write(stdisplay(untrusted_text))

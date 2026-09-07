@@ -144,15 +144,6 @@ If the screen was locked, it would automatically unlock the moment any user inpu
   error_exit 1
 fi
 
-## XDG_SESSION_TYPE comes from the session manager and is simply absent in a
-## bare shell, a cron job or a broken session -- this file runs under nounset,
-## so reading it bare aborted before the '*' arm could report the unknown
-## session type.
-##
-## Declared ONCE here rather than defaulted at each read. The first attempt
-## defaulted only the 'case' and left the '*' arm's message interpolating it
-## bare, so the script still aborted on precisely the path the fix was meant to
-## reach -- and a third use would have reintroduced it again.
 XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-}"
 
 case "${XDG_SESSION_TYPE}" in

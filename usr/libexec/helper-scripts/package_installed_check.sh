@@ -3,11 +3,10 @@
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## style-ok: no-strict -- sourced library; a top-level strict-mode block
-## would leak into the sourcing shell.
+## style-ok: no-strict - sourced library.
 
 ## 'local' is not in POSIX proper but is supported by every shell this ships
-## on (dash, busybox); shellcheck's SC3043 is a portability nag, not a bug here.
+## on (bash, busybox, dash).
 # shellcheck disable=SC3043
 
 ## NOTE: Must not include bashisms!

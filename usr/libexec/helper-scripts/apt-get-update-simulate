@@ -17,21 +17,19 @@ shopt -s shift_verbose
 
 export LC_ALL=C
 
-# shellcheck disable=SC2317  # reached via the SIGTERM/SIGINT trap, not a direct call
+# shellcheck disable=SC2317
 sigterm_trap() {
    if [ "${lastpid}" = "" ]; then
       exit 0
    fi
-   ## Already terminated.
    if ! ps -p "${lastpid}" >/dev/null 2>&1; then
+      ## Already terminated.
       exit 0
    fi
    kill -s sigterm "${lastpid}"
    exit "$?"
 }
 
-## Initialised before the trap is armed so the handler's "${lastpid}" test
-## cannot hit an unbound variable if a signal arrives before the background job.
 lastpid=""
 trap "sigterm_trap" SIGTERM SIGINT
 

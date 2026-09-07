@@ -1,9 +1,5 @@
 #!/bin/bash
 
-## Functions here are reached only indirectly -- via "trap ... EXIT" and via
-## the option-parser dispatch -- which shellcheck cannot follow.
-# shellcheck disable=SC2317
-
 ## Copyright (C) 2014 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
@@ -28,13 +24,10 @@ set -o pipefail
 
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
-## Read by output_cmd() below but only assigned further down, so an early
-## call aborts under nounset. Unset previously took the non-indented
-## branch, which "false" reproduces exactly.
 indent_style=false
 
 output_init() {
-   safe-rm -f -- "${anondate_state_folder}/anondate-set-current-message.txt"
+   safe-rm --force -- "${anondate_state_folder}/anondate-set-current-message.txt"
    touch "${anondate_state_folder}/anondate-set-current-message.txt"
 }
 
@@ -56,10 +49,8 @@ output_cmd() {
    fi
 }
 
+# shellcheck disable=SC2317
 systemd_cat_maybe() {
-   ## Each is assigned only when its state file exists, yet both are compared
-   ## below. Unset previously compared "" against "" and skipped systemd-cat;
-   ## these defaults reproduce that instead of aborting under nounset.
    local current_message=""
    local old_message=""
 
@@ -78,10 +69,9 @@ systemd_cat_maybe() {
    printf '%s\n' "${current_message}" | systemd-cat --identifier="anondate" || true
 }
 
-## Only ever assigned inside branches below, yet read by the EXIT trap.
-## Without this an early exit aborts inside the trap itself.
 exit_code=""
 
+# shellcheck disable=SC2317
 exit_handler() {
    if [ "${exit_code}" = "" ]; then
       meaning="Unexpected error (1). No exit code set yet. Setting exit_code to 1."
@@ -104,24 +94,24 @@ exit_handler() {
 
 trap exit_handler EXIT
 
-restart_tor_if_running() {
-   ## This function restart_tor_if_running is currently not in use.
-   ## Would not be easy to make this work since this script runs under user 'sdwdate'.
-
-   ## Not a good idea to use '--no-block'.
-   if systemctl --no-pager status tor@default ; then
-      output_cmd "INFO: tor@default running, stopping..."
-      ## Not a good idea to use '--no-block'.
-      systemctl --no-pager stop tor@default || true
-      output_cmd "INFO: Deleting Tor consensus files..."
-      ## provided by package helper-scripts
-      anon-consensus-del-files
-      output_cmd "INFO: Restart Tor..."
-      systemctl --no-pager --no-block start tor@default || true
-   else
-      output_cmd "INFO: tor@default not running, not deleting Tor consensus and not restarting Tor."
-   fi
-}
+#restart_tor_if_running() {
+#   ## This function restart_tor_if_running is currently not in use.
+#   ## Would not be easy to make this work since this script runs under user 'sdwdate'.
+#
+#   ## Not a good idea to use '--no-block'.
+#   if systemctl --no-pager status tor@default ; then
+#      output_cmd "INFO: tor@default running, stopping..."
+#      ## Not a good idea to use '--no-block'.
+#      systemctl --no-pager stop tor@default || true
+#      output_cmd "INFO: Deleting Tor consensus files..."
+#      ## provided by package helper-scripts
+#      anon-consensus-del-files
+#      output_cmd "INFO: Restart Tor..."
+#      systemctl --no-pager --no-block start tor@default || true
+#   else
+#      output_cmd "INFO: tor@default not running, not deleting Tor consensus and not restarting Tor."
+#   fi
+#}
 
 set_date() {
    current_time_human_readable="$(date --utc "+%Y-%m-%d %H:%M:%S")"

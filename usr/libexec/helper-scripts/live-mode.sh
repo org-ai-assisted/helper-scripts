@@ -25,6 +25,8 @@ if [ "${live_mode_sourced}" = 'false' ]; then
   shopt -s shift_verbose
 fi
 
+## TODO: Why do we disable pipefail here? There aren't any pipes in this
+## script, so we shouldn't need to.
 was_pipefail_enabled='false'
 if [ -o pipefail ]; then
   was_pipefail_enabled='true'

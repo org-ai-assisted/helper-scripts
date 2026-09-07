@@ -1,9 +1,5 @@
 #!/bin/bash
 
-## Functions here are reached only indirectly -- via "trap ... EXIT" and via
-## the option-parser dispatch -- which shellcheck cannot follow.
-# shellcheck disable=SC2317
-
 ## Copyright (C) Amnesia <amnesia at boum dot org>
 ## Copyright (C) 2014 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
@@ -135,39 +131,39 @@ parse_cmd_options() {
 
    if [ "${has_consensus_}" = "true" ]; then
       has_consensus
-      exit "$?"
+      exit 0
    fi
    if [ "${current_time_in_valid_range_}" = "true" ]; then
       current_time_is_in_valid_range
-      exit "$?"
+      exit 0
    fi
    if [ "${show_valid_after_}" = "true" ]; then
       show-valid-after
-      exit "$?"
+      exit 0
    fi
    if [ "${show_valid_until_}" = "true" ]; then
       show-valid-until
-      exit "$?"
+      exit 0
    fi
    if [ "${show_middle_range_}" = "true" ]; then
       show-middle-range
-      exit "$?"
+      exit 0
    fi
    if [ "${tor_cert_lifetime_valid_}" = "true" ]; then
       tor_cert_lifetime_valid
-      exit "$?"
+      exit 0
    fi
    if [ "${tor_cert_valid_after_}" = "true" ]; then
       tor_cert_valid_after
-      exit "$?"
+      exit 0
    fi
    if [ "${user_permission_}" = "true" ]; then
       user_permission
-      exit "$?"
+      exit 0
    fi
    if [ "${group_permission_}" = "true" ]; then
       group_permission
-      exit "$?"
+      exit 0
    fi
 
    printf '%s\n' "$0: No option chosen." 2>&1
@@ -193,11 +189,9 @@ has_consensus() {
       exit 4
    fi
    local grep_exit_code="0"
-   grep --quiet --no-messages "^valid-until ${DATE_RE}"'$' "${consensus}" || { grep_exit_code="$?" ; true; };
-   if [ "${grep_exit_code}" = "0" ]; then
-      return 0
-   else
-      return 1
+   grep --no-messages "^valid-until ${DATE_RE}"'$' "${consensus}" >/dev/null 2>&1 || { grep_exit_code="$?" ; true; };
+   if [ "${grep_exit_code}" != "0" ]; then
+      exit 1
    fi
 }
 
@@ -254,9 +248,7 @@ ${curdate}
 ${vendcons}"
    ordersrt="$(printf '%s\n' "${order}" | sort)"
 
-   if [ "${order}" = "${ordersrt}" ]; then
-      exit 0
-   else
+   if [ "${order}" != "${ordersrt}" ]; then
       exit 1
    fi
 }
@@ -278,11 +270,8 @@ tor_cert_lifetime_valid() {
    ## The log severity will be "warn" if bootstrapping with
    ## authorities and "info" with bridges.
 
-   ## For some reason 'grep -q' does not work here.
    if ${TOR_LOG} | grep "Certificate \(not yet valid\|already expired\)\." >/dev/null ; then
-      return 1
-   else
-      return 0
+      exit 1
    fi
 }
 

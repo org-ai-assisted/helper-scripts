@@ -5,8 +5,6 @@
 
 # pylint: disable=missing-module-docstring,fixme,unknown-option-value
 
-import os
-import subprocess
 import sys
 
 from io import BytesIO, StringIO, TextIOWrapper
@@ -15,12 +13,7 @@ from unittest import mock
 from strip_markup.tests.strip_markup import TestStripMarkupBase
 from stdisplay.tests.stdisplay import simple_escape_cases
 
-import sanitize_string.sanitize_string as sanitize_string_module
-
-## Single import of the module (aliased below) rather than also using
-## 'from sanitize_string.sanitize_string import main', which CodeQL flags as
-## importing the same module both with 'import' and 'import from'.
-sanitize_string_main = sanitize_string_module.main
+from sanitize_string.sanitize_string import main as sanitize_string_main
 
 
 class TestSanitizeString(TestStripMarkupBase):
@@ -132,6 +125,10 @@ Arguments:
     def test_broken_pipe(self) -> None:
         """
         Ensure a closed downstream ends the run cleanly rather than raising.
+
+        No testing for an unraisable BrokenPipeError during interpreter exit by
+        design. That test requires running a separate interpreter instance, and
+        is therefore best handled by the run-tests script.
         """
 
         stdin_buf: TextIOWrapper = TextIOWrapper(
@@ -184,31 +181,22 @@ Arguments:
 
     def test_zero_limit_still_appends_newline(self) -> None:
         """
-        A zero max-length emits no sanitized content, but '--newline' must
-        still append its newline, consistently with every other limit (the
-        zero-limit fast path must not swallow it).
+        Ensure a zero max length does not suppress a requested newline.
         """
 
-        outbuf: BytesIO = BytesIO()
-        stdout_buf: TextIOWrapper = TextIOWrapper(
-            buffer=outbuf, encoding="utf-8", newline="\n"
+        self._test_args(
+            main_func=sanitize_string_main,
+            argv0=self.argv0,
+            stdout_string="\n",
+            stderr_string="",
+            exit_code=0,
+            args=["--newline", "--", "0", "content"],
         )
-        with (
-            mock.patch.object(
-                sys, "argv", [self.argv0, "--newline", "--", "0", "content"]
-            ),
-            mock.patch.object(sys, "stdout", stdout_buf),
-        ):
-            exit_code: int = sanitize_string_main()
-        stdout_buf.flush()
-        self.assertEqual(outbuf.getvalue(), b"\n")
-        self.assertEqual(exit_code, 0)
 
     def test_zero_limit_newline_does_not_read_stdin(self) -> None:
         """
-        With '--no-block --newline' and a zero limit and no string argument,
-        the newline must be emitted WITHOUT consuming stdin: a zero limit reads
-        nothing.
+        Ensure a zero max length does not read anything from stdin even if it
+        emits a newline.
         """
 
         stdin_buf: TextIOWrapper = TextIOWrapper(
@@ -216,10 +204,10 @@ Arguments:
         )
         stdin_buf.write("unread line\n")
         stdin_buf.seek(0, 0)
-        outbuf: BytesIO = BytesIO()
         stdout_buf: TextIOWrapper = TextIOWrapper(
-            buffer=outbuf, encoding="utf-8", newline="\n"
+            buffer=BytesIO(), encoding="utf-8", newline="\n"
         )
+
         with (
             mock.patch.object(
                 sys,
@@ -230,48 +218,11 @@ Arguments:
             mock.patch.object(sys, "stdout", stdout_buf),
         ):
             exit_code: int = sanitize_string_main()
-        stdout_buf.flush()
-        self.assertEqual(outbuf.getvalue(), b"\n")
+
+        stdout_buf.seek(0, 0)
+        self.assertEqual(stdout_buf.read(), "\n")
         self.assertEqual(exit_code, 0)
-        ## stdin must be untouched -- a zero limit consumes nothing.
         self.assertEqual(stdin_buf.read(), "unread line\n")
-
-    def test_broken_pipe_no_shutdown_traceback(self) -> None:
-        """
-        A downstream that closes early must not leave a BrokenPipeError
-        traceback from the interpreter's implicit stdout flush at shutdown.
-        Runs the real CLI in a subprocess because that shutdown flush only
-        happens on a genuine interpreter exit, which an in-process main() call
-        cannot reproduce.
-        """
-
-        pkg_parent: str = os.path.dirname(
-            os.path.dirname(os.path.abspath(sanitize_string_module.__file__))
-        )
-        env: dict[str, str] = dict(os.environ)
-        existing: str = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = (
-            pkg_parent + os.pathsep + existing if existing else pkg_parent
-        )
-        proc: subprocess.CompletedProcess[bytes] = subprocess.run(
-            [
-                "bash",
-                "-c",
-                'yes | "$0" -c "$1" --no-block -- nolimit | head -n 1',
-                sys.executable,
-                (
-                    "import sys; "
-                    + "from sanitize_string.sanitize_string import main; "
-                    + "sys.exit(main())"
-                ),
-            ],
-            env=env,
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-        self.assertNotIn(b"BrokenPipeError", proc.stderr)
-        self.assertNotIn(b"Exception ignored", proc.stderr)
 
     def test_bare_double_dash(self) -> None:
         """
@@ -400,25 +351,8 @@ _b_Not bold!_/b_
 """,
             ),
             (
-                ## A raw ANSI escape sequence: the ESC byte becomes an
-                ## underscore so a terminal cannot act on it; the rest is
-                ## inert text.
-                "\x1b[31mred\x1b[0m normal",
-                "_[31mred_[0m normal",
-            ),
-            (
-                ## Unicode bidirectional overrides (RIGHT-TO-LEFT OVERRIDE and
-                ## POP DIRECTIONAL FORMATTING) that could reorder shown text
-                ## are each replaced with an underscore.
-                "before \N{RIGHT-TO-LEFT OVERRIDE} evil "
-                + "\N{POP DIRECTIONAL FORMATTING} after",
-                "before _ evil _ after",
-            ),
-            (
-                ## Markup plus an escape: the tags are stripped and the ESC
-                ## byte neutralized in the same pass.
-                "<b>\x1b[8mhidden</b> shown",
-                "_[8mhidden shown",
+                "<b>\x1b[8mhidden</b> \u202enwohs",
+                "_[8mhidden _nwohs",
             ),
         ]
 

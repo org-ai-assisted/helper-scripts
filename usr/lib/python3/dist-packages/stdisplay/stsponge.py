@@ -23,6 +23,10 @@ def main() -> None:
     if stdin is not None:
         for untrusted_text in stdin:
             untrusted_text_list.append(untrusted_text)
+    ## End-of-options. The script doesn't support any options but this is good
+    ## for consistency.
+    if len(argv) >= 2 and argv[1] == "--":
+        argv.pop(1)
     if len(argv) == 1:
         stdout.write(stdisplay("".join(untrusted_text_list)))
         stdout.flush()

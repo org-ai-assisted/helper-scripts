@@ -20,6 +20,10 @@ def main() -> None:
         stdin.reconfigure(  # type: ignore
             encoding="utf-8", errors="replace", newline="\n"
         )
+    ## End-of-options. The script doesn't support any options but this is good
+    ## for consistency.
+    if len(argv) >= 2 and argv[1] == "--":
+        argv.pop(1)
     if len(argv) == 1:
         if stdin is not None:
             for untrusted_line in stdin:

@@ -49,6 +49,9 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
+# shellcheck source=./strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
+
 true "$0: START"
 
 if [ ! -d /etc/tor ]; then
@@ -82,10 +85,10 @@ fi
 
 ## /etc/torrc.d/65_gateway.conf
 ## ClientOnionAuthDir /var/lib/tor/authdir
-tor_user="${tor_user:-debian-tor}"
-tor_group="${tor_group:-debian-tor}"
-tor_dir="${tor_dir:-/var/lib/tor}"
-client_onion_auth_dir="${client_onion_auth_dir:-${tor_dir}/authdir}"
+default_if_empty tor_user "debian-tor"
+default_if_empty tor_group "debian-tor"
+default_if_empty tor_dir "/var/lib/tor"
+default_if_empty client_onion_auth_dir "${tor_dir}/authdir"
 
 if ! test -d "${client_onion_auth_dir}"; then
    mkdir --parents -- "${client_onion_auth_dir}"

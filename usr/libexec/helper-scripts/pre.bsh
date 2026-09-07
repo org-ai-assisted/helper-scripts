@@ -223,8 +223,7 @@ error_handler_pre() {
   local exit_code="$?"
 
   ## Prevent recursion if anything fails inside the handler under caller 'set -e'.
-  ## style-ok: allow-errexit-toggle -- an error handler must not itself abort
-  ## under the caller's errexit; disabling it here is the recursion guard.
+  ## style-ok: allow-errexit-toggle - this is inside an error handler.
   trap - ERR
   set +e
 
@@ -259,7 +258,7 @@ ${error_message}
 exit_handler_pre() {
   if [ -n "${TEMP_FILE_PRE_BSH-}" ] \
     && [ -f "${TEMP_FILE_PRE_BSH-}" ]; then
-    safe-rm -f -- "${TEMP_FILE_PRE_BSH-}" || true
+    safe-rm --force -- "${TEMP_FILE_PRE_BSH-}" || true
   fi
   true "$0: END."
 }

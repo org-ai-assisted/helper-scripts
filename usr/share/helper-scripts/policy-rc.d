@@ -17,11 +17,6 @@
 ## Thanks to
 ## http://lifeonubuntu.com/how-to-prevent-server-daemons-from-starting-during-apt-get-install/
 
-set -o errexit
-set -o nounset
-set -o pipefail
-set -o errtrace
-shopt -s inherit_errexit
-shopt -s shift_verbose
+## style-ok: no-strict - just exits non-zero.
 
 exit 101

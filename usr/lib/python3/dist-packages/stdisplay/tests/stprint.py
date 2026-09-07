@@ -40,6 +40,12 @@ class TestSTPrint(stdisplay.tests.TestSTBase):
             self.text_dirty_sanitized, self._test_util(argv=[self.text_dirty])
         )
 
+        ## End-of-options test.
+        self.assertEqual(
+            self.text_dirty_sanitized,
+            self._test_util(argv=["--", self.text_dirty]),
+        )
+
 
 class TestSTPrintShell(unittest.TestCase):
     """

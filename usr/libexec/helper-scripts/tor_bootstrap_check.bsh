@@ -6,15 +6,7 @@
 ## style-ok: no-strict
 ## Sourced fragment; the sourcing script owns the strict-mode preamble.
 
-## The variables this file sets ARE its interface -- gateway_ip_error,
-## tor_bootstrap_percent, tor_circuit_established_word, the consensus
-## timestamps and the exit codes are read by its callers, e.g.
-## systemcheck's usr/libexec/systemcheck/check_tor_bootstrap.bsh, which
-## documents them with '## sets: tor_bootstrap_percent'.
-##
-## shellcheck sees only this file, so every one of them looks unused. That is
-## the nature of a sourced library, not a defect here: an 'unused' variable in
-## a fragment is exactly what an OUTPUT looks like from a single-file view.
+## Sourcing scripts use variables that we set here.
 # shellcheck disable=SC2034
 
 # shellcheck source=./has.sh
@@ -102,11 +94,10 @@ check_tor_bootstrap_helper_run_helper_script() {
 
    check_bootstrap_helper_script_exit_code="0"
 
-   ## The privleap action invoked below is authorized by the systemcheck
-   ## package: /etc/privleap/conf.d/systemcheck.conf. It stays there rather than
-   ## moving into this package -- the authorization is security-sensitive config
-   ## and relocating it across packages risks leaving the action unauthorized
-   ## for no functional gain.
+   ## TODO: Consider moving the privleap configuration that allows this to work
+   ## into this package (right now it's part of systemcheck). See also:
+   ## /etc/privleap/conf.d/systemcheck.conf. Moving this may be dangerous
+   ## unless we move our package configuration to a non-conffile dir.
    check_bootstrap_helper_script_output=$( \
       timeout \
       --kill-after="${check_tor_bootstrap_helper_kill_after}" \

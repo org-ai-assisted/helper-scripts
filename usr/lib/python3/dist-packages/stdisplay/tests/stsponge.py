@@ -23,17 +23,20 @@ class TestSTSponge(stdisplay.tests.TestSTBase):
         """
         Test stsponge.
         """
+
         self.assertEqual("", self._test_util())
         self.assertEqual("", self._test_util(stdin=""))
         self.assertEqual("stdin", self._test_util(stdin="stdin"))
         self.assertEqual("a_b\n", self._test_util(stdin="a\x07b\n"))
-        # Empty stdin with file argument produces empty stdout and file.
+
+        ## Empty stdin with file argument produces empty stdout and file.
         self.assertEqual("", self._test_util(argv=[self.tmpfiles["fill"]]))
         self.assertEqual(
             "",
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )
-        # Empty stdout when writing to file and file sanitization.
+
+        ## Empty stdout when writing to file and file sanitization.
         self.assertEqual(
             "",
             self._test_util(
@@ -44,7 +47,8 @@ class TestSTSponge(stdisplay.tests.TestSTBase):
             self.text_dirty_sanitized,
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )
-        # Empty stdout when writing to multiple files and its sanitization.
+
+        ## Empty stdout when writing to multiple files and its sanitization.
         self.assertEqual(
             "",
             self._test_util(
@@ -60,8 +64,9 @@ class TestSTSponge(stdisplay.tests.TestSTBase):
             self.text_dirty_sanitized,
             Path(self.tmpfiles["fill2"]).read_text(encoding="utf-8"),
         )
-        # Proper handling of invalid bytes, \udcff = surrogate escape for 'ff'
-        # byte, which is how Python interprets such bytes into strings
+
+        ## Proper handling of invalid bytes, \udcff = surrogate escape for 'ff'
+        ## byte, which is how Python interprets such bytes into strings.
         self.assertEqual("a_b\n", self._test_util(stdin="a\udcffb\n"))
         self.assertEqual(
             "",
@@ -71,7 +76,8 @@ class TestSTSponge(stdisplay.tests.TestSTBase):
             "a_b\n",
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )
-        # Proper handling of malicious Unicode
+
+        ## Proper handling of malicious Unicode.
         self.assertEqual(
             self.text_malicious_unicode_sanitized,
             self._test_util(stdin=self.text_malicious_unicode),
@@ -85,5 +91,17 @@ class TestSTSponge(stdisplay.tests.TestSTBase):
         )
         self.assertEqual(
             self.text_malicious_unicode_sanitized,
+            Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
+        )
+
+        ## End-of-options
+        self.assertEqual(
+            "",
+            self._test_util(
+                stdin=self.text_dirty, argv=["--", self.tmpfiles["fill"]]
+            ),
+        )
+        self.assertEqual(
+            self.text_dirty_sanitized,
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )

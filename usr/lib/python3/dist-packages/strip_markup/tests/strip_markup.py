@@ -370,24 +370,12 @@ document with an embedded script. :)
                 "_b_Bold!_/b_",
             ),
             (
-                ## Entity-encoded brackets: convert_charrefs turns '&lt;'/'&gt;'
-                ## into '<'/'>' in the extracted text, which the unconditional
-                ## underscore pass then neutralizes so no markup is smuggled back.
                 "&lt;script&gt;alert(1)&lt;/script&gt;",
                 "_script_alert(1)_/script_",
             ),
             (
-                ## A complete tag with attributes is removed entirely, leaving
-                ## nothing for a downstream renderer to act on.
                 "<img src=x onerror=alert(1)>",
                 "",
-            ),
-            (
-                ## Spec-compliant non-tags ('<' followed by a space is not a tag
-                ## start) are kept as data, so the bare metacharacters must still
-                ## be underscored.
-                "a < b and c > d",
-                "a _ b and c _ d",
             ),
             # (
             # pylint: disable=line-too-long

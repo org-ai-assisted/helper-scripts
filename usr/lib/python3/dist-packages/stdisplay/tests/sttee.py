@@ -23,17 +23,20 @@ class TestSTTee(stdisplay.tests.TestSTBase):
         """
         Test sttee.
         """
+
         self.assertEqual("", self._test_util())
         self.assertEqual("", self._test_util(stdin=""))
         self.assertEqual("stdin", self._test_util(stdin="stdin"))
         self.assertEqual("c_d\n", self._test_util(stdin="c\x07d\n"))
-        # Empty stdin with file argument.
+
+        ## Empty stdin with file argument.
         self.assertEqual("", self._test_util(argv=[self.tmpfiles["fill"]]))
         self.assertEqual(
             "",
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )
-        # Stdin sanitization and writing to file.
+
+        ## Stdin sanitization and writing to file.
         self.assertEqual(
             self.text_dirty_sanitized,
             self._test_util(
@@ -44,7 +47,8 @@ class TestSTTee(stdisplay.tests.TestSTBase):
             self.text_dirty_sanitized,
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )
-        # Stdin sanitization and writing to multiple files.
+
+        ## Stdin sanitization and writing to multiple files.
         self.assertEqual(
             self.text_dirty_sanitized,
             self._test_util(
@@ -60,8 +64,9 @@ class TestSTTee(stdisplay.tests.TestSTBase):
             self.text_dirty_sanitized,
             Path(self.tmpfiles["fill2"]).read_text(encoding="utf-8"),
         )
-        # Proper handling of invalid bytes, \udcff = surrogate escape for 'ff'
-        # byte, which is how Python interprets such bytes into strings
+
+        ## Proper handling of invalid bytes, \udcff = surrogate escape for 'ff'
+        ## byte, which is how Python interprets such bytes into strings.
         self.assertEqual("a_b\n", self._test_util(stdin="a\udcffb\n"))
         self.assertEqual(
             "a_b\n",
@@ -71,7 +76,8 @@ class TestSTTee(stdisplay.tests.TestSTBase):
             "a_b\n",
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )
-        # Proper handling of malicious Unicode
+
+        ## Proper handling of malicious Unicode.
         self.assertEqual(
             self.text_malicious_unicode_sanitized,
             self._test_util(stdin=self.text_malicious_unicode),
@@ -85,5 +91,17 @@ class TestSTTee(stdisplay.tests.TestSTBase):
         )
         self.assertEqual(
             self.text_malicious_unicode_sanitized,
+            Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
+        )
+
+        ## End-of-options.
+        self.assertEqual(
+            self.text_dirty_sanitized,
+            self._test_util(
+                stdin=self.text_dirty, argv=["--", self.tmpfiles["fill"]]
+            ),
+        )
+        self.assertEqual(
+            self.text_dirty_sanitized,
             Path(self.tmpfiles["fill"]).read_text(encoding="utf-8"),
         )

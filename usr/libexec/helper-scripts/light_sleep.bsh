@@ -3,12 +3,10 @@
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## style-ok: no-strict
-##
-## No strict-mode preamble: this file is SOURCED, never executed.
+## style-ok: no-strict - sourced library.
 
-## Fully in-Bash replacement for 'sleep'. Doesn't fork, and doesn't consume
-## around 1.5 MB of RAM like 'sleep' does. Inspired by:
+## Fully in-Bash replacement for 'sleep'. Usually doesn't fork, and doesn't
+## consume around 1.5 MB of RAM like 'sleep' does. Inspired by:
 ## https://blog.dhampir.no/content/sleeping-without-a-subprocess-in-bash-and-how-to-sleep-forever
 
 declare light_sleep_fd
@@ -23,9 +21,7 @@ light_sleep() {
     return 1
   fi
 
-  ## Test hook: return immediately without waiting when light_sleep_skip=true,
-  ## so a suite exercising a caller of light_sleep spends no real time asleep.
-  ## Unset in production, where it sleeps normally.
+  ## Allow tests to skip sleeps.
   if [ "${light_sleep_skip:-}" = 'true' ]; then
     return 0
   fi

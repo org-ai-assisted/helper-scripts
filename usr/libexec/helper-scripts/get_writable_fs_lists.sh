@@ -10,7 +10,7 @@ if was_executed "${BASH_SOURCE[0]}"; then
   set -o errexit
   set -o nounset
   set -o errtrace
-#  set -o pipefail
+  set -o pipefail
   shopt -s inherit_errexit
   shopt -s shift_verbose
 fi
@@ -38,8 +38,10 @@ while read -r line; do
 
   if [[ "${src_device}" =~ ^/dev/ ]]; then
     is_physical_device='true'
-    if [ "$(printf '%s' "${src_device}" | sed 's/[^\/]//g' | wc -c)" = 2 ];
-      then src_device="${src_device##*/}"
+    ## Technically, this could error out under pipefail, but in practice sed
+    ## should never error out here. If it does, we should abort the script.
+    if [ "$(printf '%s' "${src_device}" | sed 's/[^\/]//g' | wc -c)" = 2 ]; then
+      src_device="${src_device##*/}"
       if [[ "${src_device}" =~ ^(sd|vd|hd|xvd) ]] \
         && [[ "${src_device}" =~ (.*)([0-9]+) ]]; then
         ## cut off any numbers from the end, we don't want them
