@@ -9,29 +9,33 @@ set -o errtrace
 set -o pipefail
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
-if test -r /etc/adduser.conf; then
-  adduser_conf_file="$(cat -- /etc/adduser.conf)"
+## Overridable so tests can inject fixtures; production reads the real files.
+adduser_conf_path="${GET_USER_LIST_ADDUSER_CONF:-/etc/adduser.conf}"
+passwd_path="${GET_USER_LIST_PASSWD:-/etc/passwd}"
 
-  ## TODO: Consider multiple matches of FIRST_UID and LAST_UID. Match only last?
+## Read one numeric key from adduser.conf. The file is shell-sourced by adduser,
+## so a duplicated key means the LAST assignment wins; match that by anchoring to
+## the key and taking the last line. Prints the value, or empty if unset.
+read_adduser_conf_uid() {
+  grep -E "^[[:space:]]*${1}[[:space:]]*=" <<<"${adduser_conf_file}" \
+    | tail -n1 | cut -d'=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+    || true
+}
 
-  first_uid="$(
-    grep 'FIRST_UID' <<<"${adduser_conf_file}" | grep -v -- '^\s*#' \
-      | cut -d'=' -f2 | sed 's/^[[:space:]]*//'
-  )" || true
+if test -r "${adduser_conf_path}"; then
+  adduser_conf_file="$(cat -- "${adduser_conf_path}")"
 
+  first_uid="$(read_adduser_conf_uid FIRST_UID)"
   if [[ "${first_uid}" = *[!0-9]* ]]; then
-    printf '%s\n' "$0: ERROR: FIRST_UID in file /etc/adduser.conf is not strictly numeric!" >&2
+    printf '%s\n' "$0: ERROR: FIRST_UID in file '${adduser_conf_path}' is not strictly numeric!" >&2
     exit 1
   fi
 
-  last_uid="$(
-    grep 'LAST_UID' <<<"${adduser_conf_file}" | grep -v -- '^\s*#' \
-      | cut -d'=' -f2 | sed 's/^[[:space:]]*//'
-  )" || true
-
+  last_uid="$(read_adduser_conf_uid LAST_UID)"
   if [[ "${last_uid}" = *[!0-9]* ]]; then
-    printf '%s\n' "$0: ERROR: LAST_UID in file /etc/adduser.conf is not strictly numeric!" >&2
+    printf '%s\n' "$0: ERROR: LAST_UID in file '${adduser_conf_path}' is not strictly numeric!" >&2
     exit 1
   fi
 fi
@@ -43,8 +47,8 @@ if [ -z "${last_uid:-}" ]; then
   last_uid=59999
 fi
 
-if ! test -r /etc/passwd; then
-  printf '%s\n' "$0: ERROR: file /etc/passwd is not readable!" >&2
+if ! test -r "${passwd_path}"; then
+  printf '%s\n' "$0: ERROR: file '${passwd_path}' is not readable!" >&2
   exit 1
 fi
 
@@ -57,4 +61,4 @@ while read -r user_entry; do
       ## Include the root user in the list.
       cut -d':' -f1 <<< "${user_entry}"
    fi
-done < /etc/passwd
+done < "${passwd_path}"
