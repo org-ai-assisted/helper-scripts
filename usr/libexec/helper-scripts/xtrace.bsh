@@ -68,3 +68,18 @@ output_cmd_set() {
       output_cmd=( printf '%s\n' )
    fi
 }
+
+## Echo $SHELLOPTS with 'xtrace' present exactly once, for passing to a re-exec
+## (sudo / flock) that resets the environment so the child re-enables xtrace.
+## Adds ':xtrace' only when it is not already set, so it never accumulates a
+## superfluous duplicate.
+shellopts_with_xtrace() {
+   case ":${SHELLOPTS-}:" in
+      *:xtrace:*)
+         printf '%s' "${SHELLOPTS-}"
+         ;;
+      *)
+         printf '%s' "${SHELLOPTS-}:xtrace"
+         ;;
+   esac
+}
