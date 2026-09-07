@@ -15,13 +15,38 @@ export LC_ALL=C
 adduser_conf_path="${GET_USER_LIST_ADDUSER_CONF:-/etc/adduser.conf}"
 passwd_path="${GET_USER_LIST_PASSWD:-/etc/passwd}"
 
-## Read one numeric key from adduser.conf. The file is shell-sourced by adduser,
-## so a duplicated key means the LAST assignment wins; match that by anchoring to
-## the key and taking the last line. Prints the value, or empty if unset.
+## Read one key's value from adduser.conf. The file is shell-sourced by adduser,
+## so a duplicated key means the LAST assignment wins. Done in explicit steps for
+## clarity; prints the value, or empty if the key is unset.
 read_adduser_conf_uid() {
-  grep -E "^[[:space:]]*${1}[[:space:]]*=" <<<"${adduser_conf_file}" \
-    | tail -n1 | cut -d'=' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
-    || true
+  local key line value found
+
+  key="$1"
+  value=""
+  found="no"
+
+  ## Step 1+2: walk the file line by line and keep the LAST assignment of the
+  ## key. The match is anchored to the line start (after optional whitespace) so
+  ## comments ('#...') and substrings (e.g. 'MY_FIRST_UID') are ignored.
+  while IFS= read -r line; do
+    if [[ "${line}" =~ ^[[:space:]]*${key}[[:space:]]*= ]]; then
+      ## Step 3: value is everything after the first '='.
+      value="${line#*=}"
+      found="yes"
+    fi
+  done <<< "${adduser_conf_file}"
+
+  ## The key was absent: report empty so the caller applies its default.
+  if [ "${found}" = "no" ]; then
+    printf '%s' ""
+    return 0
+  fi
+
+  ## Step 4: strip surrounding whitespace.
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+
+  printf '%s' "${value}"
 }
 
 if test -r "${adduser_conf_path}"; then
