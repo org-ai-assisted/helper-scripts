@@ -3,8 +3,10 @@
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## style-ok: no-strict -- dual-mode: strict is set only inside 'if was_executed' (a direct run), so the directives are not at column 0; sourcing this file must not enable strict mode in the sourcing shell.
-## style-ok: no-tmp-hardcode -- the '/tmp/user/<uid>' path is the EXPECTED TMPDIR this test verifies, not a tmp-file location to parameterize.
+## style-ok: no-strict - dist-ai's checks aren't clever enough to see the
+## strict-mode block below.
+
+## style-ok: no-tmp-hardcode - needs to verify that TMPDIR is set right.
 
 # shellcheck source=./check_runtime.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh

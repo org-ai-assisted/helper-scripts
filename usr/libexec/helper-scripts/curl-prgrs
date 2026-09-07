@@ -45,14 +45,12 @@
 #
 # Modifications:
 # - Subsequent modifications by Patrick Schleizer under the same license.
+#
+# Note: Several parts of this script are broken into functions when it doesn't
+# seem necessary. This is for the sake of automated testing. Do not factor out
+# functions unless necessary.
 
 #set -x
-
-## Source-able: strict-mode lives inside main() (guarded by was_executed), never
-## at column 0, so a test can source this file and call the reusable functions
-## without inheriting strict-mode or auto-running. The '-e' on the shebang keeps
-## the pre-guard 'source' lines below fatal on a direct run (missing helper-scripts
-## aborts), and is ignored when sourced.
 
 ## provides: was_executed
 # shellcheck source=./check_runtime.bsh
@@ -67,22 +65,22 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 # shellcheck source=./has.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 
-## Pure seam so a test can force either branch of initialize_terminal without a
-## real TTY (override in a sourced shell). Strict-mode free.
+## Allows tests to override the stderr TTY check.
 stderr_is_tty() {
   [ -t 2 ]
 }
 
 initialize_terminal() {
-  # We want to print the progress bar to stderr, but only if stderr is a
-  # terminal. To avoid a conditional every time we print something, we can
-  # instead print everything to file descriptor 4, and then point that file
-  # descriptor to the right place: stderr if it's a TTY, or /dev/null
-  # otherwise.
+  ## We want to print the progress bar to stderr, but only if stderr is a
+  ## terminal. To avoid a conditional every time we print something, we can
+  ## instead print everything to an allocated file descriptor, and then point
+  ## that file descriptor to the right place: stderr if it's a TTY, or
+  ## /dev/null otherwise.
+
   if stderr_is_tty; then
-    exec 4>&2
+    exec {stderr_fd}>&2
   else
-    exec 4>/dev/null
+    exec {stderr_fd}>/dev/null
   fi
 }
 
@@ -92,46 +90,41 @@ initialize_variables() {
   has safe-rm
   has mktemp
 
-  : "${CURL:="curl"}"
-  : "${CURL_PRGRS_MAX_FILE_SIZE_BYTES:=""}"
-  : "${CURL_OUT_FILE:=""}"
-  : "${CURL_PRGRS_EXEC:=""}"
-  : "${curl_prgrs_print_progress:="yes"}"
+  default_if_empty CURL "curl"
+  default_if_empty CURL_PRGRS_MAX_FILE_SIZE_BYTES ""
+  default_if_empty CURL_OUT_FILE ""
+  default_if_empty CURL_PRGRS_EXEC ""
+  default_if_empty curl_prgrs_print_progress "yes"
   percent_last=""
 
   expected_header_size=8000
   maximum_http_header_size=32000
 }
 
-## Create the temp dir and derive the status / curl-pid file paths. Called in
-## main() only AFTER check_variables, so an early config-error exit (57) never
-## creates an ownerless /tmp/tmp.* dir: the cleanup EXIT trap is installed later
-## still (traps_enable), so anything created here must be guarded by it.
+## Separate from initialize_variables to avoid creating a tempdir if a config
+## error occurs.
 initialize_temporary_files() {
   temp_dir_auto_generated=true
   temporary_directory="$(mktemp --directory)"
 
-  # Compute names for our temporary files by joining the current date and
-  # time with the current process ID. We will need two temporary files: one
-  # for reading progress information from curl, and another for sending the
-  # exit status of curl from the forked child process back to the parent.
+  ## Compute names for our temporary files by joining the current date and
+  ## time with the current process ID. We will need two temporary files: one
+  ## for reading progress information from curl, and another for sending the
+  ## exit status of curl from the forked child process back to the parent.
   statusfile="${temporary_directory}/status"
 
-  # curl runs in a subshell (the header command substitution, then the
-  # backgrounded body worker), so the 'curl_pid' it sets is NOT visible to the
-  # main shell. The worker records curl's real PID here so the main shell's
-  # signal traps can actually kill the in-flight download -- otherwise a SIGTERM
-  # to this script leaves curl running.
+  ## curl runs in a subshell, so we have to save its PID to a file so the
+  ## parent can read it.
   curl_pid_file="${temporary_directory}/curl.pid"
 }
 
 check_variables() {
   if [ "${CURL_OUT_FILE}" = "" ]; then
-    stecho "${BASH_SOURCE[0]} ERROR: Variable CURL_OUT_FILE is empty." >&4
+    stecho "${BASH_SOURCE[0]} ERROR: Variable CURL_OUT_FILE is empty." >&"${stderr_fd}"
     exit 57
   fi
   if [ "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" = "" ]; then
-    stecho "${BASH_SOURCE[0]} ERROR: Variable CURL_PRGRS_MAX_FILE_SIZE_BYTES is empty." >&4
+    stecho "${BASH_SOURCE[0]} ERROR: Variable CURL_PRGRS_MAX_FILE_SIZE_BYTES is empty." >&"${stderr_fd}"
     exit 57
   fi
 
@@ -140,30 +133,23 @@ check_variables() {
   is_whole_number "${maximum_http_header_size}"
 }
 
-# Define our `shutdown` function, which will be responsible for cleaning
-# up when the program terminates, either normally or abnormally.
-# shellcheck disable=SC2317  # reached only via the trap wrapper functions below
+## Define our `shutdown` function, which will be responsible for cleaning
+## up when the program terminates, either normally or abnormally.
+# shellcheck disable=SC2317
 shutdown() {
   local exit_code="$?"
   local signal="$1"
   local last_err="${BASH_COMMAND}"
   if [ "${signal}" = "err" ]; then
-    ## '${last_err}' is the failing command, captured above. It was being
-    ## captured and then discarded, so the error said a signal arrived but not
-    ## what had failed -- the one detail worth having.
-    stecho "${BASH_SOURCE[0]} ERROR: Signal ${signal} received while running '${last_err}'. Exiting." >&4
-    stecho "${BASH_SOURCE[0]} ERROR: BASH_COMMAND '${BASH_COMMAND}' exit code '${exit_code}'." >&4
+    stecho "${BASH_SOURCE[0]} ERROR: Signal ${signal} received while running '${last_err}'. Exiting." >&"${stderr_fd}"
+    stecho "${BASH_SOURCE[0]} ERROR: BASH_COMMAND '${BASH_COMMAND}' exit code '${exit_code}'." >&"${stderr_fd}"
   elif [ "${signal}" = "exit" ]; then
-    true "${BASH_SOURCE[0]} INFO: Signal ${signal} received. Exiting." >&4
+    true "${BASH_SOURCE[0]} INFO: Signal ${signal} received. Exiting." >&"${stderr_fd}"
   else
-    stecho "${BASH_SOURCE[0]} INFO: Signal ${signal} received. Exiting." >&4
+    stecho "${BASH_SOURCE[0]} INFO: Signal ${signal} received. Exiting." >&"${stderr_fd}"
   fi
 
   trap - SIGHUP SIGINT SIGTERM ERR EXIT
-
-  # If we wrote an exit status to the temporary file, read it. Otherwise,
-  # we reached this trap function abnormally; assume a non-zero status.
-
   sync
 
   ## 'status' is the single source of truth for the exit code: curl_exit is the
@@ -192,7 +178,7 @@ shutdown() {
       true "${BASH_SOURCE[0]} ERROR: status is not a number! status: '${status}'"
       status="111"
     elif [ "${status}" -eq 0 ] && { [ "${signal}" != "exit" ] || [ "${exit_code}" -ne 0 ]; }; then
-      true "${BASH_SOURCE[0]} ERROR: abnormal termination (signal '${signal}', exit code '${exit_code}') with a 0 status file; using generic error 110"
+      true "${BASH_SOURCE[0]} ERROR: abnormal termination (signal '${signal}', exit code '${exit_code}') with a 0 status file!"
       status="110"
     fi
   else
@@ -200,34 +186,25 @@ shutdown() {
     status="112"
   fi
 
-  # If we are exiting normally, jump back to the beginning of the line
-  # and clear it. Otherwise, print a newline.
+  ## If we are exiting normally, jump back to the beginning of the line
+  ## and clear it. Otherwise, print a newline.
   if [ "${status}" -eq 0 ]; then
-    printf '%b' "\x1B[0G\x1B[0K" >&4
+    printf '%b' "\x1B[0G\x1B[0K" >&"${stderr_fd}"
   else
-    printf '%s\n' '' >&4
+    printf '%s\n' '' >&"${stderr_fd}"
   fi
 
   #stat="$(stcat "$statusfile")"
-  #stecho "$stat" >&4
+  #stecho "$stat" >&"${stderr_fd}"
 
-  ## Read the PID curl_download published BEFORE the temp dir (which holds the
-  ## file) is removed. In the main shell curl_pid is empty -- curl runs in a
-  ## subshell -- so this file is what lets a SIGTERM to this script kill the
-  ## in-flight download.
+  ## Read the PID curl_download published before removing the temp dir.
   local published_curl_pid=""
-  : "${curl_pid_file:=""}"
+  default_if_empty curl_pid_file ""
   if [ -n "${curl_pid_file}" ] && [ -f "${curl_pid_file}" ]; then
     published_curl_pid="$(cat -- "${curl_pid_file}" 2>/dev/null || true)"
   fi
 
-  ## Only the MAIN shell removes the temp dir. curl_download runs backgrounded in
-  ## a subshell that inherits these traps, so this function can also run there; if
-  ## that subshell deleted the temp dir on an error, the main shell's shutdown
-  ## would then find no status file and mask the specific exit code as 112.
-  ## BASHPID == $$ only in the main shell ($$ is fixed across subshells while
-  ## BASHPID is per-process), so the worker's shutdown leaves the status file for
-  ## the main shell to read.
+  ## Only clean up the temp dir if it is ephemeral and we are the parent shell.
   if [ "${temp_dir_auto_generated}" = "true" ] && [ "${BASHPID}" = "$$" ]; then
     safe-rm -r -f -- "${temporary_directory}"
   fi
@@ -236,13 +213,15 @@ shutdown() {
   : "${curl_pid:=""}"
 
   ## Kill curl by both the local curl_pid (set when shutdown runs inside the
-  ## worker) and the published PID (the only one the main shell knows). A stale
-  ## or dead PID is skipped by the 'kill -0' guard.
+  ## worker) and the published PID (the only one the main shell knows).
   processes_list="${curl_pid} ${published_curl_pid}"
   for processes_item in ${processes_list} ; do
     if kill -0 -- "${processes_item}" 2>/dev/null ; then
       #ps -p "$processes_item" || true
       kill -s sigkill -- "${processes_item}" &>/dev/null || true
+      ## There is only ever one curl process we want to kill, so we're done
+      ## now.
+      break
     fi
   done
 
@@ -250,10 +229,6 @@ shutdown() {
   exit "${status}"
 }
 
-## R-051: a trap cannot pass the received signal name to 'shutdown', so a thin
-## per-signal wrapper supplies it. Behaviour is identical to the inline form --
-## $? and the signal argument are the same, and $BASH_COMMAND is read inside
-## 'shutdown' either way. Reached only via the traps below (SC2317).
 # shellcheck disable=SC2317
 shutdown_sigint() {
   shutdown sigint
@@ -276,7 +251,7 @@ shutdown_sighup() {
 }
 
 traps_enable() {
-  # Register our `shutdown` function to be invoked when the process dies.
+  ## Register our `shutdown` function to be invoked when the process dies.
   trap shutdown_sigint SIGINT
   trap shutdown_sigterm SIGTERM
   trap shutdown_err ERR
@@ -284,14 +259,11 @@ traps_enable() {
   trap shutdown_sighup SIGHUP
 }
 
-# Map downloaded bytes and expected total to a clamped 0..100 percentage.
-# Pure and strict-mode free (a test can source and call it directly). Both
-# arguments are expected to be already-validated whole numbers.
-#
-# A total of 0 (an empty file / 'Content-Length: 0') means there is nothing
-# left to fetch, so it maps to 100 rather than dividing by zero: the bare
-# '$(( bytes * 100 / length ))' would raise a "division by 0" arithmetic
-# error, trip errtrace, and exit via the signal path instead of completing.
+## Map downloaded bytes and expected total to a clamped 0..100 percentage.
+## Both arguments are expected to be already-validated whole numbers.
+##
+## A total of 0 (an empty file / 'Content-Length: 0') means there is nothing
+## left to fetch, so it maps to 100.
 compute_percent() {
   local bytes="$1"
   local length="$2"
@@ -309,9 +281,9 @@ compute_percent() {
   printf '%s' "${percent}"
 }
 
-# The `print_progress` function draws our progress bar to the screen. It
-# takes two arguments: the number of bytes read so far, and the total
-# number of bytes expected.
+## The `print_progress` function draws our progress bar to the screen. It
+## takes two arguments: the number of bytes read so far, and the total
+## number of bytes expected.
 print_progress() {
   local bytes="$1"
   local length="$2"
@@ -323,14 +295,12 @@ print_progress() {
     curl_exit 113
   fi
 
-  # If we are expecting less than 8 KB of data, don't bother drawing a
-  # progress bar. (This helps avoid a flicker when following redirects.)
+  ## If we are expecting less than 8 KB of data, don't bother drawing a
+  ## progress bar. (This helps avoid a flicker when following redirects.)
   #[ "$length" -gt 8192 ] || return 0
 
-  # Calculate the progress percentage and the size of the filled and
-  # unfilled portions of the progress bar. 'bytes' and 'length' are
-  # already-validated whole numbers, so compute_percent yields a whole
-  # number by construction -- no re-validation of the result is needed.
+  ## Calculate the progress percentage and the size of the filled and
+  ## unfilled portions of the progress bar.
   local percent
   true "${BASH_SOURCE[0]} INFO: bytes: '${bytes}'"
   true "${BASH_SOURCE[0]} INFO: length: '${length}'"
@@ -339,13 +309,13 @@ print_progress() {
   if [ "${percent_last}" = "${percent}" ]; then
     true "${BASH_SOURCE[0]} INFO: percentage number unchanged. Not re-drawing progress bar to avoid flicker."
   else
-    draw_progress_bar "${percent}" >&4
+    draw_progress_bar "${percent}" >&"${stderr_fd}"
     if [ "${CURL_PRGRS_EXEC}" = "" ]; then
       true "${BASH_SOURCE[0]} INFO: CURL_PRGRS_EXEC is empty. Not executing CURL_PRGRS_EXEC."
     else
       true "${BASH_SOURCE[0]} INFO: CURL_PRGRS_EXEC is set. Executing CURL_PRGRS_EXEC..."
       true "${BASH_SOURCE[0]} INFO: ${CURL_PRGRS_EXEC} '${percent}'"
-      ${CURL_PRGRS_EXEC} "${percent}" >&4
+      ${CURL_PRGRS_EXEC} "${percent}" >&"${stderr_fd}"
       true "${BASH_SOURCE[0]} INFO: CURL_PRGRS_EXEC success."
     fi
   fi
@@ -357,13 +327,11 @@ curl_exit() {
   curl_exit_code="$1"
   true "${BASH_SOURCE[0]} INFO: write ${curl_exit_code} to ${statusfile}"
   stecho "${curl_exit_code}" > "${statusfile}"
-  ## curl for this attempt is concluding (reaped on success, killed just below on
-  ## failure), so drop its published PID. Otherwise the main shell's later EXIT
-  ## trap would re-read a now-dead PID and, under PID reuse, SIGKILL an unrelated
-  ## process. The SIGTERM path never reaches curl_exit, so the live PID stays
-  ## published there for the signal handler to kill.
-  : "${curl_pid_file:=""}"
-  printf '%s' '' > "${curl_pid_file}" 2>/dev/null || true
+  ## curl is either already shut down or is about to be killed, so clear its
+  ## PID file so the parent doesn't try to kill it again.
+  if [ -n "${curl_pid_file:-}" ]; then
+    printf '%s' '' > "${curl_pid_file}" 2>/dev/null || true
+  fi
   if [ "${curl_exit_code}" = "0" ]; then
     return 0
   fi
@@ -376,16 +344,13 @@ curl_exit() {
   return "${curl_exit_code}"
 }
 
-# Endless-data mitigation (TUF threat model). Given the bytes seen on disk so
-# far and the two ceilings (the hard CURL_PRGRS_MAX_FILE_SIZE_BYTES cap and the
-# advertised content length), echo the curl exit code the caller must raise, or
-# 0 when the size is still within bounds:
-#   113 - size is not a whole number (a broken 'stat' reading)
-#    81 - size exceeded the hard maximum file-size cap
-#   114 - size exceeded the advertised content length
-# Pure and strict-mode free: a test can source and call it with crafted sizes,
-# so every branch -- including the 113 case a real 'stat' cannot produce -- is
-# exercised directly. Precedence matches the original inline checks.
+## Given the bytes seen on disk so far and the two ceilings (the hard
+## CURL_PRGRS_MAX_FILE_SIZE_BYTES cap and the advertised content length), echo
+## the curl exit code the caller must raise, or 0 when the size is still within
+## bounds:
+##   113 - size is not a whole number
+##    81 - size exceeded the hard maximum file-size cap
+##   114 - size exceeded the advertised content length
 classify_download_size() {
   local downloaded="$1"
   local max_bytes="$2"
@@ -406,13 +371,10 @@ classify_download_size() {
   printf '%s' 0
 }
 
-# The content-length ceiling classify_download_size must enforce for the current
-# phase. Body phase: the advertised Content-Length. Header phase:
-# curl_prgrs_content_length is only an estimate (expected_header_size), so
-# enforcing it as a ceiling would fail a legitimate large header with 114; the
-# genuine header limit is the hard cap (max_bytes), so return that -- keeping the
-# over-cap 81 (endless-data) check while removing the false 114 in the header
-# phase. Pure and strict-mode free.
+## The content-length ceiling classify_download_size must enforce for the
+## current phase. The body phase uses the content length, the header phase uses
+## the maximum allowable download size since we don't know how big the header
+## will be in advance.
 content_length_ceiling_for_phase() {
   local header_download="$1"
   local advertised="$2"
@@ -425,37 +387,28 @@ content_length_ceiling_for_phase() {
   printf '%s' "${advertised}"
 }
 
-# After curl exits, re-read the final on-disk size and re-apply the endless-data
-# ceilings to it. The last size the poll loop observed can lag the bytes curl
-# flushed in the window between that poll and the 'kill -0' that saw curl gone,
-# which would misreport a complete download as truncated (115); re-checking the
-# ceilings also catches an over-limit final write the loop never polled. Updates
-# size_file_downloaded_bytes in the caller (read by the truncation check).
-# The content-length ceiling to enforce is passed in ($1): the body phase uses
-# the advertised length, the header phase the hard cap (see curl_download).
-enforce_final_size() {
-  local content_length="$1"
+## Ensure the file being downloaded has not grown larger than either ceiling.
+enforce_file_size() {
+  local content_length_ceiling="$1"
   if [ ! -f "${CURL_OUT_FILE}" ]; then
     return 0
   fi
   size_file_downloaded_bytes="$(stat -c "%s" -- "${CURL_OUT_FILE}")"
+  true "size_file_downloaded_bytes: ${size_file_downloaded_bytes}"
+  true "CURL_PRGRS_MAX_FILE_SIZE_BYTES: ${CURL_PRGRS_MAX_FILE_SIZE_BYTES}"
+  true "content_length_ceiling: ${content_length_ceiling}"
   local size_check_code
-  size_check_code="$(classify_download_size "${size_file_downloaded_bytes}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" "${content_length}")"
+  size_check_code="$(classify_download_size "${size_file_downloaded_bytes}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" "${content_length_ceiling}")"
   if [ "${size_check_code}" != "0" ]; then
     curl_exit "${size_check_code}"
   fi
 }
 
 curl_download() {
-  local size_file_downloaded_bytes size_check_code
+  local size_file_downloaded_bytes
 
   ${CURL} --no-progress-meter "$@" &
   curl_pid="$!"
-  ## Publish curl's PID so the main shell's shutdown can kill it on a signal
-  ## (curl_pid itself is local to this subshell). A SIGTERM in the sub-millisecond
-  ## window before this write lands would fall back to the pre-fix behaviour (the
-  ## download continues) rather than misbehaving -- an accepted residual, since a
-  ## real signal arrives seconds into a transfer, not between these two lines.
   printf '%s\n' "${curl_pid}" > "${curl_pid_file}"
 
   ## Additional validation.
@@ -465,30 +418,17 @@ curl_download() {
     curl_exit 116
   fi
 
-  ## header_download: both in-file call sites set it via env prefix; default it
-  ## for a direct sourced caller. "false" is the safe default -- it keeps the 115
-  ## truncation check below ENABLED, since skipping it would let a short download
-  ## pass. It also selects the content-length ceiling below.
-  : "${header_download:="false"}"
+  ## Default to false so truncation isn't accidentally permitted.
+  default_if_empty header_download 'false'
 
-  ## Header phase enforces the hard cap, not the estimate (see
-  ## content_length_ceiling_for_phase); the body phase keeps the advertised length.
   local content_length_ceiling
   content_length_ceiling="$(content_length_ceiling_for_phase \
     "${header_download}" "${curl_prgrs_content_length}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}")"
 
   while true ; do
     if [ -f "${CURL_OUT_FILE}" ]; then
-      size_file_downloaded_bytes="$(stat -c "%s" -- "${CURL_OUT_FILE}")"
 
-      true "size_file_downloaded_bytes: ${size_file_downloaded_bytes}"
-      true "CURL_PRGRS_MAX_FILE_SIZE_BYTES: ${CURL_PRGRS_MAX_FILE_SIZE_BYTES}"
-      true "content_length_ceiling: ${content_length_ceiling}"
-
-      size_check_code="$(classify_download_size "${size_file_downloaded_bytes}" "${CURL_PRGRS_MAX_FILE_SIZE_BYTES}" "${content_length_ceiling}")"
-      if [ "${size_check_code}" != "0" ]; then
-        curl_exit "${size_check_code}"
-      fi
+      enforce_file_size "${content_length_ceiling}"
 
       if [ "${curl_prgrs_print_progress}" = "yes" ]; then
         ## Need to print to stderr to avoid confusing the stdout output of this command.
@@ -501,17 +441,14 @@ curl_download() {
       break
     fi
 
-    ## Poll interval. Overridable (default 1s) purely so a test can iterate the
-    ## loop quickly; production behaviour is unchanged.
+    ## Poll interval is overridable so tests can speed through this.
     sleep "${curl_prgrs_poll_interval:-1}"
   done
 
   ## curl already terminated.
-  enforce_final_size "${content_length_ceiling}"
+  enforce_file_size "${content_length_ceiling}"
 
-  ## header_download is defaulted to "false" above (before the poll loop), so the
-  ## truncation check below stays ENABLED for a direct sourced caller too.
-  : "${size_file_downloaded_bytes:=""}"
+  default_if_empty size_file_downloaded_bytes ""
   if is_whole_number "${size_file_downloaded_bytes}" ; then
     true "size_file_downloaded_bytes: ${size_file_downloaded_bytes}"
     true "curl_prgrs_content_length: ${curl_prgrs_content_length}"
@@ -533,14 +470,9 @@ remove_argument_for_header_request() {
   local skip_next=false
   header_arguments=()
 
-  ## Best-effort strip of the user's output/resume options for the header probe.
-  ## This drops the exact '-o'/'--output'/'-C'/'--continue-at' spellings to keep
-  ## the probe's argv clean; it deliberately does NOT try to enumerate every curl
-  ## output-option form (attached '-ofile', bundled '-LO', '--output=x', ...) --
-  ## that way lies a curl-argv parser. The ROBUST guarantee that the probe writes
-  ## only to the header file lives in run_download, which passes ITS '--output'
-  ## ahead of these args so curl pairs the header file to the URL first (any
-  ## surviving user output option becomes a harmless extra).
+  ## Due to how curl's argument format works, this might strip things it
+  ## shouldn't (for instance if `--output` is passed as the argument to a
+  ## different option). This shouldn't be an issue in practice.
   for arg_item in "$@"; do
     if [ "${skip_next}" = true ]; then
       skip_next=false
@@ -574,19 +506,10 @@ remove_argument_for_header_request() {
   #stecho "${args[@]}"
 }
 
-# The backgrounded body-download worker. It inherits the signal traps so a
-# SIGTERM still interrupts the in-flight download here. shutdown may therefore
-# run in this subshell too; it removes the temp dir ONLY in the main shell (see
-# the BASHPID guard there), so a status recorded by curl_exit survives for the
-# main shell's shutdown to report.
 run_body_download() {
   header_download="false" curl_download "$@"
 }
 
-# Orchestrates a download: a HEAD request to learn the content length, then the
-# backgrounded body download. Relies on the globals that initialize_variables /
-# check_variables set up, so it is the executed entry's worker, not a reusable
-# pure helper.
 run_download() {
   local header_file
 
@@ -625,27 +548,9 @@ run_download() {
   ## CURL_PRGRS_EXEC="" to avoid a progress bar for the header download.
   ## That would confuse yad.
   ##
-  ## Write the HEAD response to "$header_file", never the caller's file. Our
-  ## '--output' goes FIRST -- BEFORE "${header_arguments[@]}" -- because curl pairs
-  ## output options to URLs left-to-right: ours claims the URL, so a caller output
-  ## option (any spelling: '-o'/'-O'/'-LO'/'-ofile', which no simple strip catches)
-  ## becomes a harmless "more output options than URLs" extra rather than diverting
-  ## the probe into the caller's file. Placing it first (a prepend, never an append)
-  ## also keeps it valid when the caller uses '--': it is parsed before the caller's
-  ## end-of-options marker. '--write-out' echoes the Content-Length to stdout.
-  ##
-  ## Residual, deliberately NOT chased -- the probe SHARES the caller's argv, and
-  ## defusing every way a caller option can influence it needs either a curl
-  ## option-grammar parser or a probe redesign, both out of scope. A positional
-  ## override only works where curl's own precedence allows it WITHOUT breaking the
-  ## caller's '--' (an append past '--' becomes a bogus URL), which is true for the
-  ## output pairing above but NOT for last-wins options. Known residuals, all
-  ## pre-existing: a caller '--write-out'/'-w' overrides ours (last wins) so the
-  ## probe can read the wrong value; an ATTACHED resume offset ('-C100'/'-C-')
-  ## forces a Range whose 206 can report a partial Content-Length (the space forms
-  ## '-C -' / '-C 100' ARE stripped above); '--output-dir' reprefixes our
-  ## '--output'; a '.curlrc' 'output' can claim the URL. These need a caller that
-  ## does not pass such options to a single-download progress wrapper.
+  ## CURL_OUT_FILE and
+  ## --output "$header_file" to avoid overwriting files when using "--continue-at -".
+  ## '--write-out' will echo.
   curl_prgrs_content_length="$(
     header_download="true" \
     curl_prgrs_content_length="${expected_header_size}" \
@@ -668,32 +573,23 @@ run_download() {
     curl_exit 116
   fi
 
-  ## Reject an implausibly large advertised Content-Length (a malicious or broken
-  ## server): a value beyond ~10 PB (17+ digits) is never a real download and
-  ## would push the later 'bytes * 100' and integer comparisons past Bash's
-  ## signed 64-bit range, wrapping to a negative percentage or aborting on
-  ## 'integer expression expected'. The digit-count check stays safe on the
-  ## oversized value itself (no arithmetic on it).
+  ## Reject an implausibly large advertised Content-Length.
   if [ "${#curl_prgrs_content_length}" -gt 16 ]; then
     curl_exit 116
   fi
 
-  ## Reset the status file between phases. The header download's curl_exit wrote
-  ## 0 to it; leaving that 0 in place would let a body worker that dies WITHOUT
-  ## calling curl_exit (a failed CURL_PRGRS_EXEC hook, or 'stat' failing) be read
-  ## by the main shell's shutdown as a SUCCESS. With no status file such a failure
-  ## resolves to the generic error 112 instead.
+  ## Reset the status file between phases.
   safe-rm -f -- "${statusfile}"
 
   true "${BASH_SOURCE[0]} INFO: Download file..."
 
   ## Launching into the background is required so a SIGTERM to this script can
-  ## still interrupt the in-flight download. If attempting to refactor this, make
+  ## interrupt the in-flight download. If attempting to refactor this, make
   ## sure signal sigterm stops downloads.
   run_body_download "$@" &
 
   wait_exit_code=0
-  wait "$!" &>/dev/null || { wait_exit_code=$? ; true; };
+  wait "$!" &>/dev/null || wait_exit_code=$?
   true "${BASH_SOURCE[0]} INFO: File download done."
   true "${BASH_SOURCE[0]} INFO: END."
   exit "${wait_exit_code}"
@@ -708,16 +604,6 @@ main() {
   shopt -s shift_verbose
   export LC_ALL=C
 
-  ## Create the temp dir ONLY AFTER check_variables, so a config-error exit 57
-  ## never leaves an ownerless /tmp/tmp.* dir (the cleanup trap is not installed
-  ## yet at that point).
-  ##
-  ## Register the shutdown traps ONLY AFTER initialization and validation. The
-  ## trap reads variables that initialize_temporary_files sets (statusfile,
-  ## temporary_directory, ...), and its status-file logic would otherwise turn a
-  ## setup failure into a generic error: check_variables' documented 'exit 57'
-  ## for a missing CURL_OUT_FILE would be masked to 112 (no status file yet), and
-  ## a trap firing before statusfile is assigned would itself fail under nounset.
   initialize_terminal
   initialize_variables
   check_variables
@@ -726,7 +612,6 @@ main() {
   run_download "$@"
 }
 
-## Only auto-run when executed, not when sourced (unit tests source it).
 if was_executed "${BASH_SOURCE[0]}"; then
   main "$@"
 fi

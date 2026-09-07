@@ -21,6 +21,10 @@ def main() -> None:
         stdin.reconfigure(  # type: ignore
             encoding="utf-8", errors="replace", newline="\n"
         )
+    ## End-of-options. The script doesn't support any options but this is good
+    ## for consistency.
+    if len(argv) >= 2 and argv[1] == "--":
+        argv.pop(1)
     with ExitStack() as stack:
         output_files: list[TextIO] = []
         if len(argv) > 1:

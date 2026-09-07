@@ -3,30 +3,15 @@
 ## Copyright (C) 2020 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## errexit on the shebang (direct run only; ignored when sourced) so a failed
-## 'source' below aborts before main() sets the full strict block.
-
 ## provides was_executed
 # shellcheck source=../libexec/helper-scripts/check_runtime.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+
 ## provides has
 # shellcheck source=../libexec/helper-scripts/has.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 
-## True if the proprietary NVIDIA control node ('/dev/nvidiactl') is present.
-## Overridable (DETECT_SOFTWARE_RENDERING_NVIDIA_CTL) for tests. Pure and
-## strict-mode free.
-nvidia_node_present() {
-   local nvidia_ctl
-
-   nvidia_ctl="${DETECT_SOFTWARE_RENDERING_NVIDIA_CTL:-/dev/nvidiactl}"
-   [ -e "${nvidia_ctl}" ]
-}
-
-## True if a DRM node ('/dev/dri/renderD*', '/dev/dri/card*') or the NVIDIA
-## control node ('/dev/nvidiactl') is present. Both paths are overridable
-## (DETECT_SOFTWARE_RENDERING_DRI_DIR, DETECT_SOFTWARE_RENDERING_NVIDIA_CTL) for
-## tests. Pure and strict-mode free.
+## True if a DRM node is present.
 gpu_node_present() {
    local dri_dir node
 
@@ -36,32 +21,33 @@ gpu_node_present() {
          return 0
       fi
    done
-   nvidia_node_present
+
+   ## NOTE: No check for /dev/nvidiactl by design. Graphics rendering is
+   ## provided through DRI devices as scanned for above. It is possible for
+   ## /dev/nvidiactl or other non-DRI GPU-related devices to exist and hardware
+   ## rendering still be unavailable.
+   return 1
 }
 
 ## Classify ONE 'OpenGL core profile renderer:' line: prints software,
-## accelerated or unknown. A software marker wins over a vendor substring WITHIN
-## the line -- a CPU renderer whose name embeds a vendor token (Apple's "Apple
-## Software Renderer", Microsoft's WARP "D3D12 (Microsoft Basic Render Driver)").
-## Vendor tokens match whole-word so "ATI" does not match inside "NATIVE".
-## Here-strings, not pipes, so a quiet grep cannot SIGPIPE the producer into a
-## pipefail failure (R-161). Pure and strict-mode free.
+## accelerated or unknown. A software marker wins over a vendor substring
+## within the line.
 classify_renderer_line() {
    local line="$1"
 
-   if grep --quiet --ignore-case --fixed-strings \
+   if grep --ignore-case --fixed-strings \
       -e "llvmpipe" \
       -e "softpipe" \
       -e "swrast" \
       -e "software renderer" \
       -e "software rasterizer" \
       -e "basic render driver" \
-      <<< "${line}" ; then
+      <<< "${line}" >/dev/null 2>&1; then
       printf '%s\n' "software"
       return 0
    fi
 
-   if grep --quiet --fixed-strings --word-regexp \
+   if grep --fixed-strings --word-regexp \
       -e "AMD" \
       -e "NVIDIA" \
       -e "Intel" \
@@ -80,7 +66,7 @@ classify_renderer_line() {
       -e "virgl" \
       -e "SVGA3D" \
       -e "D3D12" \
-      <<< "${line}" ; then
+      <<< "${line}" >/dev/null 2>&1; then
       printf '%s\n' "accelerated"
       return 0
    fi
@@ -89,40 +75,16 @@ classify_renderer_line() {
 }
 
 ## Classify the OpenGL renderer. Best-effort only. Prints exactly one word:
-## accelerated, software or unknown; anything not a clear match is 'unknown',
-## never assumed. Pure and strict-mode free (see detect_software_rendering).
-##
-## Two zero-cost, hang-free short-circuits run before 'eglinfo', so the common
-## no-GPU VM case never spawns a GL probe:
-##  - LIBGL_ALWAYS_SOFTWARE truthy: the Mesa stack is forced to llvmpipe.
-##  - no DRM node ('/dev/dri/renderD*', '/dev/dri/card*') AND no NVIDIA node
-##    ('/dev/nvidiactl'): no hardware driver at all. Proprietary NVIDIA (classic
-##    GLX) renders via '/dev/nvidia*', not a DRM node, so its presence blocks
-##    this short-circuit and falls through to the probe.
-## Only when a GPU node is present is eglinfo asked for the actual renderer.
-## eglinfo's GBM/Wayland/device probes FAIL FAST without a DRM node; the one path
-## that can block is the X11/Wayland platform connecting to $DISPLAY /
-## $WAYLAND_DISPLAY when the server accepts but never replies (a half-started
-## server during login), so those are unset for the eglinfo call (the renderer is
-## still read via the surfaceless/GBM/device platforms), and it is bounded with
-## 'timeout' as a backstop.
+## accelerated, software or unknown.
 probe_renderer() {
-   local eglinfo_output renderer_lines renderer_line timeout_maybe saw_hardware saw_software libgl_always_software
+   local eglinfo_output renderer_lines renderer_line timeout_maybe saw_hardware
+   local saw_software libgl_always_software
 
-   ## LIBGL_ALWAYS_SOFTWARE is a deliberate user/admin DIRECTIVE to force software
-   ## rendering -- a Mesa variable (docs.mesa3d.org/envvars.html: "if set to true,
-   ## always use software rendering"); nothing in the OS sets it. Honor the intent
-   ## regardless of driver: report software without probing. This matches what the
-   ## consumer does with it (force the software QML renderer) and is crash-safe.
-   ## On the proprietary NVIDIA stack the flag does not actually change GL (NVIDIA
-   ## is not Mesa), but forcing software there is safe, just not the fastest -- the
-   ## user asked for software. Lowercase once, then compare the truthy spellings.
-   ##
-   ## Qubes /etc/profile.d/qubes-gui.sh sets LIBGL_ALWAYS_SOFTWARE=1 among other
-   ## environment variables.
+   ## LIBGL_ALWAYS_SOFTWARE is a Mesa3D variable to force software rendering.
+   ## See https://docs.mesa3d.org/envvars.html.
    libgl_always_software="${LIBGL_ALWAYS_SOFTWARE:-}"
    case "${libgl_always_software,,}" in
-      1 | true | yes | y | t | on)
+      1|true|yes|y|t|on)
          printf '%s\n' "software"
          return 0
          ;;
@@ -144,27 +106,18 @@ probe_renderer() {
    renderer_line=""
    timeout_maybe=""
 
-   ## 'timeout' (coreutils, Essential: yes) bounds eglinfo; empty prefix if it is
-   ## somehow absent, running eglinfo unbounded. 'env' unsets DISPLAY /
-   ## WAYLAND_DISPLAY so eglinfo cannot block on a display-server connect; the
-   ## renderer still comes from the surfaceless/GBM/device platforms.
-   ## --kill-after=5: a plain 'timeout 5' only sends SIGTERM, which a wedged
-   ## eglinfo stuck in a syscall can ignore and then run forever; the follow-up
-   ## SIGKILL 5s later guarantees it dies.
    if has timeout ; then
       timeout_maybe="timeout --kill-after=5 5"
    fi
-   ## Deliberate word-splitting: 'timeout --kill-after=5 5' -> three words, or nothing.
    # shellcheck disable=SC2086
-   eglinfo_output="$(${timeout_maybe} env --unset=DISPLAY --unset=WAYLAND_DISPLAY eglinfo -B 2>/dev/null)" || true
+   eglinfo_output="$(${timeout_maybe} env --unset=DISPLAY --unset=WAYLAND_DISPLAY --unset=WAYLAND_SOCKET eglinfo -B 2>/dev/null)" || true
    renderer_lines="$(printf '%s\n' "${eglinfo_output}" | grep --fixed-strings -- "OpenGL core profile renderer:")" || true
 
-   ## 'eglinfo -B' prints a renderer line PER EGL platform (surfaceless, GBM,
-   ## device, ...); a platform that cannot initialise can fall back to llvmpipe
-   ## while another reports the real GPU. Classify EACH line and let HARDWARE win
-   ## across platforms -- the GPU is present if any platform sees it -- so a
-   ## single llvmpipe fallback line cannot mask a hardware renderer. Only when NO
-   ## line is hardware and at least one is software do we report software.
+   ## 'eglinfo -B' prints a renderer line per EGL platform. A platform that
+   ## cannot initialise can fall back to llvmpipe while another reports the
+   ## real GPU. Classify each line, let hardware win across platforms. Only
+   ## when no line is hardware and at least one is software do we report
+   ## software.
    saw_hardware="false"
    saw_software="false"
    while IFS= read -r renderer_line ; do
@@ -191,21 +144,10 @@ probe_renderer() {
    printf '%s\n' "unknown"
 }
 
-## Best-effort GUESS of the renderer type. Prints one of, and returns:
+## Best-effort guess of the renderer type. Prints one of, and returns:
 ##   software      0   llvmpipe (mesa CPU renderer)
 ##   accelerated   1   a known hardware vendor renderer
 ##   unknown       2   eglinfo absent / empty / timed out / unrecognized
-##
-## Deliberately NOT cached: a GPU node can appear (NVIDIA nodes are created on
-## demand, eGPU/DisplayLink/VM hot-add) and disappear (unplug, VM device_del)
-## within a boot, so any per-boot snapshot goes stale in one direction or the
-## other. Re-evaluating every call is cheap: the no-GPU case short-circuits
-## instantly, and the eglinfo path is fast (its hanging X11/Wayland connect is
-## avoided -- see probe_renderer).
-##
-## Pure and strict-mode free, so a caller (unit test, or another script reusing
-## the guess) can source this file and call this function without inheriting
-## strict-mode. main() owns strict-mode; this function does not.
 detect_software_rendering() {
    local result
 
@@ -236,7 +178,6 @@ main() {
    detect_software_rendering "$@"
 }
 
-## Only auto-run when executed, not when sourced (unit tests source it).
 if was_executed "${BASH_SOURCE[0]}"; then
    main "$@"
 fi

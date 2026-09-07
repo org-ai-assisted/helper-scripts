@@ -3,8 +3,7 @@
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## style-ok: no-strict -- sourced library; a top-level strict-mode block
-## would leak 'set -o errexit'/'nounset' into the sourcing shell.
+## style-ok: no-strict -- sourced library.
 
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/ip_syntax.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh

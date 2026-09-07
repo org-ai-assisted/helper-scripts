@@ -71,7 +71,8 @@ main(){
       symbol="${3-}"
       ;;
     get-entry)
-      db="${3-}"; field="${4-}"
+      db="${3-}"
+      field="${4-}"
       ;;
     -h|--?help|help)
       usage 0

@@ -10,7 +10,7 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-## style-ok: allow-exec -- terminal exec of apt-get is the wrapper's purpose; nothing to run after.
+## style-ok: allow-exec - relatively thin wrapper around apt-get.
 
 if [ "$(id -un)" = 'root' ]; then
   ## Avoid using 'sudo' if already using account 'root'. Reasons:

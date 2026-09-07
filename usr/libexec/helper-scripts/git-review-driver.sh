@@ -321,10 +321,6 @@ stat_rc=0
 git diff --no-ext-diff --no-index --stat --color=always \
   -- "${old_file}" "${new_file}" | stcat || stat_rc="${PIPESTATUS[0]}"
 if [ "${stat_rc}" -gt 1 ]; then
-  ## rc > 1 is a real 'git diff' error (rc 1 just means the files differ), and
-  ## there is no legitimate reason it should fail on two materialized blobs --
-  ## it means git is broken or misused, so the whole review is untrustworthy.
-  ## Fail loud rather than press on with a possibly-broken display.
   die 1 "'--stat' for '${diff_path_q}' failed (git diff rc ${stat_rc})."
 fi
 

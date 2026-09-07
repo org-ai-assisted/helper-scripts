@@ -3,10 +3,10 @@
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## style-ok: no-strict -- this file is 'source'd, so a strict-mode block here
-## would change the SOURCING shell's behaviour rather than apply to a shell of
-## its own. The sourcer owns its strict-mode settings.
-## style-ok: no-has -- this is the definition of 'has'; it cannot call itself.
+## style-ok: no-strict - sourced library.
+## style-ok: no-has - this script is 'has' itself.
+
+## FIXME: This script uses bashisms and should be renamed `has.bsh`.
 
 ## This is just a simple wrapper around 'command -v' to avoid
 ## spamming '>/dev/null' throughout this function. This also guards
@@ -17,10 +17,9 @@ has() {
 
   for _name in "$@"; do
     _cmd="$(command -v "${_name}")" 2>/dev/null || return 1
-    ## 'command -v' prints a bare word for builtins, functions, aliases and
-    ## keywords rather than a path. Testing that word with '-x' would resolve
-    ## it as a RELATIVE path in the current directory, so 'has printf' failed
-    ## even though printf is always available. Only a path is worth testing.
+    ## TODO: Consider making it so that this command's only purpose is to check
+    ## for executable files. In that instance we would want to error out if
+    ## anything other than an absolute path is passed.
     case "${_cmd}" in
       /*)
         [ -x "${_cmd}" ] || return 1

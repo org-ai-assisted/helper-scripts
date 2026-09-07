@@ -17,15 +17,10 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 # shellcheck source=./trace.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/trace.bsh
 
-## stecho + sanitize-string are helper-scripts BINARIES in usr/bin. Reference
-## them by absolute path via HELPER_SCRIPTS_PATH (as str_replace_tool does), so
-## they resolve from a source checkout too -- where they are NOT on PATH (the
-## build invokes consumers via sudo, which resets PATH). An empty
-## HELPER_SCRIPTS_PATH (installed) yields /usr/bin/<name>.
 stecho_bin="${HELPER_SCRIPTS_PATH:-}/usr/bin/stecho"
 sanitize_string_bin="${HELPER_SCRIPTS_PATH:-}/usr/bin/sanitize-string"
 
-if [ ! -x "${stecho_bin}" ] || [ ! -x "${sanitize_string_bin}" ]; then
+if ! has "${stecho_bin}" || ! has "${sanitize_string_bin}"; then
   printf '%s\n' "$0: ERROR: stecho and/or sanitize-string missing ('${stecho_bin}', '${sanitize_string_bin}')."
   printf '%s\n' "$0: INFO: function_trace:"
   function_trace

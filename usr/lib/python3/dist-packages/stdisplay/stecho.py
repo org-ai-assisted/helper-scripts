@@ -15,6 +15,7 @@ def main() -> None:
     stdout.reconfigure(  # type: ignore
         encoding="ascii", errors="replace", newline="\n"
     )
+    ## End-of-options intentionally omitted, since "echo" doesn't support it.
     if len(argv) > 1:
         untrusted_text = " ".join(argv[1:])
         stdout.write(stdisplay(untrusted_text))

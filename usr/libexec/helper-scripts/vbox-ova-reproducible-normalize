@@ -224,16 +224,7 @@ def patch_vmdk_descriptor(path, salt, index, image_uuid):
         ## The descriptor text ends at the first NUL; everything after is
         ## padding to the sector boundary.
         ## latin-1 is used deliberately as a lossless 1:1 byte<->codepoint codec,
-        ## not as a claim about the descriptor's real text encoding. Read and
-        ## write both use latin-1, and only pure-ASCII tokens (CID, ddb.uuid.image,
-        ## ddb.comment) are rewritten -- ASCII is identical under latin-1 and
-        ## UTF-8, so any other byte round-trips verbatim. This guarantees byte-
-        ## and length-preserving normalization (the patched text must fit the
-        ## sector-padded region below) and never raises UnicodeDecodeError on
-        ## arbitrary header bytes. The VMDK descriptor format defines no
-        ## 'encoding=' field, and ddb.comment (the only field that can carry host
-        ## bytes) is blanked below, so switching to UTF-8 would gain nothing and
-        ## could abort the build on a non-UTF-8 byte.
+        ## not as a claim about the descriptor's real text encoding.
         text = block.split(b"\x00", 1)[0].decode("latin-1")
 
         new_cid = derive_cid(salt, "cid", index)
@@ -290,9 +281,6 @@ def rewrite_manifest(mf_path, workdir):
         "MD5": "md5",
     }
     out_lines = []
-    ## latin-1 as a lossless byte<->codepoint codec (see rewrite_vmdk): manifest
-    ## lines are 'ALGO (name) = hex', all ASCII in practice, and any other byte
-    ## round-trips verbatim because read and write both use latin-1.
     with open(mf_path, "r", encoding="latin-1") as handle:
         for line in handle.read().splitlines():
             line_match = line_re.match(line)
@@ -300,10 +288,6 @@ def rewrite_manifest(mf_path, workdir):
                 out_lines.append(line)
                 continue
             algo_name, member, _ = line_match.groups()
-            ## Stream the member through hashlib (OpenSSL-backed) in 1 MiB
-            ## chunks. Shelling out to a coreutils checksum tool would add a
-            ## per-member subprocess plus output parsing and a PATH dependency
-            ## for no meaningful speedup.
             digest = hashlib.new(algos[algo_name])
             with open(os.path.join(workdir, member), "rb") as member_handle:
                 for chunk in iter(
@@ -461,11 +445,6 @@ def main():
             )
 
         ovf_path = os.path.join(workdir, ovf_names[0])
-        ## latin-1 as a lossless byte<->codepoint codec (see rewrite_vmdk). The
-        ## OVF is semantically UTF-8 XML, but this pass rewrites only ASCII
-        ## tokens (UUIDs, MACs, ISO timestamps) and round-trips every other byte
-        ## verbatim, so reading and writing latin-1 reproduces the file exactly
-        ## without risking a decode error on non-ASCII content.
         with open(ovf_path, "r", encoding="latin-1") as handle:
             ovf_text = handle.read()
         ovf_text, disk_uuid_by_href = normalize_ovf(ovf_text, salt, epoch)

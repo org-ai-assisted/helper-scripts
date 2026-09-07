@@ -1,9 +1,5 @@
 #!/bin/bash
 
-## Functions here are reached only indirectly -- via "trap ... EXIT" and via
-## the option-parser dispatch -- which shellcheck cannot follow.
-# shellcheck disable=SC2317
-
 ## Copyright (C) 2014 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
@@ -67,10 +63,9 @@ output_cmd() {
    printf '%s\n' "______ ${msg}" >&2
 }
 
-## Only ever assigned inside branches below, yet read by the EXIT trap.
-## Without this an early exit aborts inside the trap itself.
 exit_code=""
 
+# shellcheck disable=SC2317
 exit_handler() {
    if [ "${exit_code}" = "" ]; then
       meaning="Unexpected error (1). No exit code set yet. Setting exit_code to 1."

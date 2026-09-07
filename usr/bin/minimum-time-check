@@ -19,9 +19,9 @@ shopt -s inherit_errexit
 shopt -s shift_verbose
 
 check_valid() {
-   expected_string_lenght=10
+   expected_string_length=10
    actual_string_length="${#1}"
-   if [ ! "${actual_string_length}" = "${expected_string_lenght}" ]; then
+   if [ ! "${actual_string_length}" = "${expected_string_length}" ]; then
       return 1
    fi
    if [[ ! "$1" != *[!0-9]* ]]; then

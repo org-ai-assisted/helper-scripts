@@ -9,34 +9,20 @@
 sanitize_string.py: Strips markup and control characters from a string.
 """
 
-import contextlib
-import os
 import sys
+from typing import Any
 from .sanitize_string_lib import sanitize_string
 
 
 suppress_usage_info: bool = False
 
 
-def _silence_broken_pipe_on_shutdown() -> None:
+# pylint: disable=unused-argument
+def ignore_unraisable_hook(unraisable: Any) -> None:
     """
-    Redirect stdout to /dev/null after a BrokenPipeError so the interpreter's
-    implicit flush of sys.stdout at shutdown does not re-raise BrokenPipeError
-    from the C-level finalizer -- which prints an 'Exception ignored on
-    flushing sys.stdout' traceback to stderr. The downstream pipe is already
-    gone, so nothing more is written anyway; this keeps the immediate-exit
-    behavior while suppressing the shutdown noise.
+    Swallow unraisable exceptions, such as the "Exception ignored on flushing
+    sys.stdout" exception.
     """
-
-    ## contextlib.suppress rather than a bare 'except OSError: pass' (an empty
-    ## except is a smell); the try/finally closes the fd dup2 duplicated, so it
-    ## is not leaked even though the process is about to exit.
-    with contextlib.suppress(OSError):
-        devnull_fd: int = os.open(os.devnull, os.O_WRONLY)
-        try:
-            os.dup2(devnull_fd, sys.stdout.fileno())
-        finally:
-            os.close(devnull_fd)
 
 
 def print_usage() -> None:
@@ -99,7 +85,6 @@ def sanitize_stdin_noblock(
         ## `cat /dev/zero | tee /dev/null | head -c1` exits when `head` exits,
         ## rather than running forever with `cat` feeding into a
         ## "fault-tolerant" `tee`).
-        _silence_broken_pipe_on_shutdown()
         return 0
 
 
@@ -121,29 +106,32 @@ def sanitize_block(
             sys.stdout.write("\n")
     except BrokenPipeError:
         ## Not worth erroring out for.
-        _silence_broken_pipe_on_shutdown()
+        pass
+
+
+def emit_trailing_newline_maybe(append_newline: bool) -> None:
+    """
+    Possibly print a newline.
+    """
+
+    if not append_newline:
+        return
+
+    try:
+        sys.stdout.write("\n")
+    except BrokenPipeError:
+        ## Not worth erroring out for.
+        pass
 
 
 # pylint: disable=too-many-branches,too-many-return-statements
-def emit_trailing_newline_only(
-    max_string_length: int | None, append_newline: bool
-) -> None:
-    """
-    Emit just the trailing newline, with no sanitized content.
-
-    Used where there is nothing to sanitize -- a zero limit, or no readable
-    stdin -- but '--newline' still has to append its newline, as it does for
-    every other limit and as echo does when given no arguments.
-    """
-
-    if append_newline:
-        sanitize_block("", max_string_length, append_newline)
-
-
 def main() -> int:
     """
     Main function.
     """
+
+    ## Avoid broken pipe error messages.
+    sys.unraisablehook = ignore_unraisable_hook
 
     # pylint: disable=global-statement
     global suppress_usage_info
@@ -201,23 +189,18 @@ def main() -> int:
         encoding="ascii", errors="replace", newline="\n"
     )
 
-    ## A zero limit emits no sanitized content and must return without reading
-    ## stdin, but '--newline' still has to append its newline (as it does for
-    ## every other limit), so emit just that and stop.
+    ## Even if the string length is 0, we should still print a newline if
+    ## explicitly requested.
     if max_string_length == 0:
-        emit_trailing_newline_only(max_string_length, append_newline)
+        emit_trailing_newline_maybe(append_newline)
         return 0
 
     ## Sanitize standard input if no string was given as an argument
     if untrusted_string is None:
         if sys.stdin is None:
-            ## No way to get an untrusted string. There is no content to
-            ## sanitize, but '--newline' still has to append its newline --
-            ## exactly as the zero-limit branch above does, and as echo does
-            ## when given no arguments. Emitting nothing here made
-            ## 'sanitize-echo' with no stdin (pythonw, a detached service)
-            ## silently produce no output at all.
-            emit_trailing_newline_only(max_string_length, append_newline)
+            ## No way to get an untrusted string, just handle the newline if
+            ## needed.
+            emit_trailing_newline_maybe(append_newline)
             return 0
         sys.stdin.reconfigure(  # type: ignore
             encoding="utf-8", errors="replace", newline="\n"

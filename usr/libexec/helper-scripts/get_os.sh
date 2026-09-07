@@ -97,9 +97,9 @@ get_os(){
           ;;
       esac
       if [ -n "${WSLENV:-}" ]; then
-        distro="${distro}${WSLENV+ on Windows 10 [WSL2]}"
+        distro="${distro}${WSLENV+ on Windows 10/11 [WSL2]}"
       elif [ -z "${kernel%%*-Microsoft}" ]; then
-        distro="${distro} on Windows 10 [WSL1]"
+        distro="${distro} on Windows 10/11 [WSL1]"
       fi
     ;;
     Haiku)

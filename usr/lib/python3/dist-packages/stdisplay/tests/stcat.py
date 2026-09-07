@@ -4,7 +4,7 @@
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-# pylint: disable=missing-module-docstring
+# pylint: disable=missing-module-docstring,duplicate-code
 
 import stdisplay.tests
 
@@ -42,6 +42,12 @@ class TestSTCat(stdisplay.tests.TestSTBase):
             self._test_util(stdin=self.text_dirty),
         )
 
+        ## End-of-options tests.
+        self.assertEqual("a b", self._test_util(argv=["--"], stdin="a b"))
+        self.assertEqual(
+            "p_q\n", self._test_util(argv=["--", "-", "-"], stdin="p\x07q\n")
+        )
+
     def test_stcat_file(self) -> None:
         """
         Test passing files.
@@ -67,6 +73,16 @@ class TestSTCat(stdisplay.tests.TestSTBase):
         for text, argv in cases:
             with self.subTest(text=text, argv=argv):
                 self.assertEqual(text, self._test_util(argv=argv))
+
+        test_endofoptions_text = self.text_malicious_unicode_sanitized
+        test_endofoptions_opts = ["--", self.tmpfiles["malicious_unicode"]]
+        with self.subTest(
+            text=test_endofoptions_text, argv=test_endofoptions_opts
+        ):
+            self.assertEqual(
+                test_endofoptions_text,
+                self._test_util(argv=test_endofoptions_opts),
+            )
 
         self.assertEqual(
             "a b\nc d",

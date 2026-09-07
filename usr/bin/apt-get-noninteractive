@@ -10,12 +10,15 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-POLICYRCD="${POLICYRCD:-/usr/share/helper-scripts/policy-rc.d}"
-DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
-DEBIAN_PRIORITY="${DEBIAN_PRIORITY:-critical}"
-DEBCONF_NOWARNINGS="${DEBCONF_NOWARNINGS:-yes}"
-APT_LISTCHANGES_FRONTEND="${APT_LISTCHANGES_FRONTEND:-text}"
-NEEDRESTART_MODE="${NEEDRESTART_MODE:-l}"
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source /usr/libexec/helper-scripts/strings.bsh
+
+default_if_empty POLICYRCD "/usr/share/helper-scripts/policy-rc.d"
+default_if_empty DEBIAN_FRONTEND "noninteractive"
+default_if_empty DEBIAN_PRIORITY "critical"
+default_if_empty DEBCONF_NOWARNINGS "yes"
+default_if_empty APT_LISTCHANGES_FRONTEND "text"
+default_if_empty NEEDRESTART_MODE "l"
 
 export POLICYRCD DEBIAN_FRONTEND DEBIAN_PRIORITY DEBCONF_NOWARNINGS APT_LISTCHANGES_FRONTEND NEEDRESTART_MODE
 
