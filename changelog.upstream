@@ -1,3 +1,81 @@
+commit 36bca989aafadedd093d5c07af7a630beb496b1f
+Merge: 6f45e08f 51187b49
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Mon Sep 7 00:44:53 2026 -0400
+
+    Merge remote-tracking branch 'ArrayBolt3/arraybolt3/trixie'
+
+commit 51187b49c7c7f9664f01e6022916ec7a2ee2ec76
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Sep 6 21:47:57 2026 -0400
+
+    fixme
+
+commit 59a0b88505b55d43cb3428a9dd99fea68466c84c
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Sep 6 21:17:12 2026 -0400
+
+    Polish, rename display.py to check_display.py, shorten, and make mypy/pylint/black-compliant
+
+commit edb9d7524e6eb3142e09954289b9aef332048696
+Merge: e06c9ee2 b09bcd3e
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Sep 6 20:57:20 2026 -0400
+
+    Merge branch 'ai' into arraybolt3/trixie
+
+commit b09bcd3eebb26d5d7da8caf1c714c422e9550c55
+Author: claude (dev421 573bc9ba-3b4d-4993-94ef-3b572f5b8604) <noreply@anthropic.com>
+Date:   Fri Sep 4 03:46:48 2026 -0400
+
+    Add guimessages.display no-GUI guard
+
+    - Qt aborts (SIGABRT, exit 134) when QApplication finds no display; the
+      abort is uncatchable from Python, so GUI helpers must check up front.
+    - Shared exit_if_no_gui()/gui_available() mirrors msgfallbacks and honours
+      QT_QPA_PLATFORM (offscreen renders must not be suppressed).
+
+commit e06c9ee2584380a24a47e5de1a66d7f0c1431c4d
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Tue Sep 1 21:09:28 2026 -0400
+
+    Polish, add TODOs and a FIXME
+
+commit 2517fa239dc8dd6303fe3378d163928ee5c25171
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Thu Aug 27 23:57:53 2026 -0400
+
+    log_run_die: reference stecho/sanitize-string by absolute path, not PATH mutation
+
+    Cleaner than mutating the caller's PATH: define them from HELPER_SCRIPTS_PATH
+    (as str_replace_tool does) and call by absolute path. All build-reachable bare
+    calls are in this one file, so this fully closes the checkout-context gap with
+    no side effect; installed (empty HELPER_SCRIPTS_PATH) resolves to /usr/bin.
+
+commit 44cedcc183f5eaf3335a8711e171b6c7c31e2474
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Thu Aug 27 23:40:54 2026 -0400
+
+    log_run_die: put HELPER_SCRIPTS_PATH/usr/bin on PATH for stecho + sanitize-string
+
+    They are usr/bin BINARIES called as bare commands here. Installed they are
+    on PATH; run from a source checkout (the build invokes consumers via sudo,
+    which resets PATH) they are not, so type_exists failed and the build died at
+    3600. Add the tree's usr/bin; no-op when installed.
+
+commit 9b00aeebdd57412ed1ae0536da2aa99cead9b36e
+Merge: eb8aef1a 6f45e08f
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Thu Aug 27 23:38:08 2026 -0400
+
+    Merge remote-tracking branch 'github-kicksecure/master' into ai
+
+commit 6f45e08f307a7142aa07eae23048f61415bb04bb
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Wed Aug 26 07:59:29 2026 +0000
+
+    bumped changelog version
+
 commit 809afda1d67332bb583ccd4f4761d9c91bb9d549
 Merge: 38e2a24c b5c9a3f5
 Author: Patrick Schleizer <adrelanos@whonix.org>
