@@ -79,12 +79,12 @@ read_integer_file() {
     printf '%s\n' "$0: ERROR: No target file specified!" >&2
     return 1
   fi
-  if [ -n "${lower_bound}" ] && ! [[ "${lower_bound}" =~ ^(0|[1-9][0-9]*)$ ]]; then
-    printf '%s\n' "$0: ERROR: Non-numeric lower bound specified!" >&2
+  if [ -n "${lower_bound}" ] && ! is_whole_number_int64 "${lower_bound}"; then
+    printf '%s\n' "$0: ERROR: Non-numeric or out-of-range lower bound specified!" >&2
     return 1
   fi
-  if [ -n "${upper_bound}" ] && ! [[ "${upper_bound}" =~ ^(0|[1-9][0-9]*)$ ]]; then
-    printf '%s\n' "$0: ERROR: Non-numeric upper bound specified!" >&2
+  if [ -n "${upper_bound}" ] && ! is_whole_number_int64 "${upper_bound}"; then
+    printf '%s\n' "$0: ERROR: Non-numeric or out-of-range upper bound specified!" >&2
     return 1
   fi
 
@@ -108,9 +108,9 @@ read_integer_file() {
       "$0: ERROR: Empty target file '${target_file}'!" >&2
     return 1
   fi
-  if ! [[ "${file_contents}" =~ ^(0|[1-9][0-9]*)$ ]]; then
+  if ! is_whole_number_int64 "${file_contents}"; then
     sanitize-echo --max-length "${STRINGS_BSH_REPORT_MAX}" -- \
-      "$0: ERROR: Non-numeric value in target file '${target_file}'!" >&2
+      "$0: ERROR: Non-numeric or out-of-range value in target file '${target_file}'!" >&2
     return 1
   fi
   if [ -n "${lower_bound}" ] && [ "${file_contents}" -lt "${lower_bound}" ]; then
@@ -131,38 +131,52 @@ read_integer_file() {
 ##
 ##   default_if_empty TMP /tmp
 default_if_empty() {
-  local strings_bsh_var_name strings_bsh_default_value
-
-  strings_bsh_var_name="${1:-}"
-  strings_bsh_default_value="${2:-}"
-
-  if ! check_variable_name "${strings_bsh_var_name}"; then
+  if ! check_variable_name "${1:-}"; then
     sanitize-echo --max-length "${STRINGS_BSH_REPORT_MAX}" -- \
-      "$0: ERROR: ${FUNCNAME[0]}: not a variable name: '${strings_bsh_var_name}'!" >&2
+      "$0: ERROR: ${FUNCNAME[0]}: not a variable name: '${1:-}'!" >&2
     return 1
   fi
 
-  if [ -v "${strings_bsh_var_name}" ] && [ -n "${!strings_bsh_var_name}" ]; then
+  ## Operate on $1 (name) / $2 (default) DIRECTLY, never via a local copy: a
+  ## local named like the caller's target variable would shadow it (dynamic
+  ## scope), so [ -v ]/${!} would read our empty local and printf -v would write
+  ## it instead of the caller's variable. Positional parameters cannot be
+  ## shadowed.
+  if [ -v "$1" ] && [ -n "${!1}" ]; then
     return 0
   fi
 
   ## style-ok: allow-unchecked-printf-v - linter misses the check_variable_name
   ## call above.
-  printf -v "${strings_bsh_var_name}" '%s' "${strings_bsh_default_value}"
+  printf -v "$1" '%s' "${2:-}"
 }
 
+## Locale-pin assumption (applies to every validator below that sets LC_ALL=C:
+## check_is_alpha_numeric, validate_safe_filename,
+## check_valid_linux_user_account_name, check_variable_name, check_no_control_chars,
+## is_whole_number, is_integer):
+## Each pins LC_ALL=C so bracket ranges ([A-Za-z], [0-9], ...) are byte/ASCII
+## deterministic. This ASSUMES no caller has made LC_ALL readonly. A readonly
+## UTF-8 LC_ALL makes 'local LC_ALL=C' (and 'export LC_ALL=C') FAIL, so the
+## match then runs under UTF-8 -- the very bug the pin prevents. No caller in
+## helper-scripts does this. Truly overriding a readonly LC_ALL needs a separate
+## PROCESS (a subshell inherits the readonly, so it cannot reassign it either),
+## which is not warranted for a non-existent caller.
 check_is_alpha_numeric() {
-  ## LC_ALL=C prevents 'a-z' from matching Unicode characters.
-  local strings_bsh_varname strings_bsh_value LC_ALL=C
-
   if [ -z "${1:-}" ]; then
     printf '%s\n' "$0: ERROR: No variable name provided to check_is_alpha_numeric." >&2
     return 1
   fi
 
-  strings_bsh_varname="$1"
-  check_variable_name "${strings_bsh_varname}" || return 1
-  strings_bsh_value="${!strings_bsh_varname}"
+  check_variable_name "$1" || return 1
+  ## Capture the caller's value via ${!1} (positional $1, unshadowable; the RHS
+  ## is expanded before the local binds) BEFORE declaring locals, so a caller
+  ## variable named like one of ours is not shadowed. LC_ALL=C (prevents
+  ## 'a-z'/[0-9] matching Unicode) is pinned AFTER the capture, so it does not
+  ## shadow a caller variable literally named LC_ALL either.
+  local strings_bsh_value="${!1}"
+  local strings_bsh_varname="$1"
+  local LC_ALL=C
 
   if [ "${strings_bsh_value}" = "" ]; then
     sanitize-echo --max-length "${STRINGS_BSH_REPORT_MAX}" -- "$0: ${FUNCNAME[0]}: variable content is empty!
@@ -179,28 +193,23 @@ check_is_alpha_numeric() {
 }
 
 validate_safe_filename() {
-  local strings_bsh_varname strings_bsh_value strings_bsh_reason strings_bsh_re
-
-  ## Don't allow any Unicode to pass the checks below.
-  local was_lc_all_set='false'
-  local OLD_LC_ALL="${LC_ALL:-}"
-  [ -v LC_ALL ] && was_lc_all_set='true'
-  export LC_ALL=C
-
+  ## LC_ALL=C so the [[ ]] checks below are byte/ASCII-deterministic and reject
+  ## Unicode (e.g. [[:alnum:]] must not match Unicode letters). A LOCAL (not
+  ## exported) pin auto-restores on return and never leaks the caller's LC_ALL
+  ## value OR its export state -- a plain (non-exported) caller LC_ALL must not
+  ## become exported by this call. The one external locale-sensitive command
+  ## ('wc -c' below) carries its own LC_ALL=C prefix.
   if [ -z "${1:-}" ]; then
     printf '%s\n' "$0: ERROR: ${FUNCNAME[0]}: No variable name provided to validate_safe_filename!" >&2
-    unset LC_ALL
-    [ "${was_lc_all_set}" = 'true' ] && export LC_ALL="${OLD_LC_ALL}"
     return 1
   fi
 
-  strings_bsh_varname="$1"
-  if ! check_variable_name "${strings_bsh_varname}"; then
-    unset LC_ALL
-    [ "${was_lc_all_set}" = 'true' ] && export LC_ALL="${OLD_LC_ALL}"
-    return 1
-  fi
-  strings_bsh_value="${!strings_bsh_varname}"
+  check_variable_name "$1" || return 1
+  ## Capture via ${!1} (positional, unshadowable) BEFORE declaring the locals,
+  ## so a caller variable named like one of ours is not shadowed.
+  local strings_bsh_value="${!1}"
+  local strings_bsh_varname="$1"
+  local strings_bsh_reason strings_bsh_re LC_ALL=C
 
   if [[ -z "${strings_bsh_value}" ]]; then
     strings_bsh_reason="Empty value!"
@@ -223,8 +232,6 @@ validate_safe_filename() {
     ## plus, comma, equals, @, parentheses, percent, braces, square brackets
     strings_bsh_re='^[][:alnum:]_.:@+=,(){}%\[ -]+$'
     if [[ "${strings_bsh_value}" =~ ${strings_bsh_re} ]]; then
-      unset LC_ALL
-      [ "${was_lc_all_set}" = 'true' ] && export LC_ALL="${OLD_LC_ALL}"
       return 0
     fi
     strings_bsh_reason="Invalid character!"
@@ -236,8 +243,6 @@ validate_safe_filename() {
 
   od -An -tx1 <<<"${strings_bsh_value}" | head --bytes="${STRINGS_BSH_REPORT_MAX}" >&2
 
-  unset LC_ALL
-  [ "${was_lc_all_set}" = 'true' ] && export LC_ALL="${OLD_LC_ALL}"
   return 1
 }
 
@@ -251,17 +256,17 @@ check_valid_linux_user_account_name() {
 }
 
 check_is_not_empty_and_only_one_line() {
-  local strings_bsh_varname strings_bsh_value strings_bsh_number_of_lines strings_bsh_lines
-
   if [ -z "${1:-}" ]; then
     printf '%s\n' "$0: ERROR: No variable name provided to check_is_not_empty_and_only_one_line." >&2
     return 1
   fi
 
-  strings_bsh_varname="$1"
-  check_variable_name "${strings_bsh_varname}" || return 1
-  strings_bsh_value="${!strings_bsh_varname}"
-
+  check_variable_name "$1" || return 1
+  ## Capture via ${!1} (positional, unshadowable) BEFORE declaring the locals,
+  ## so a caller variable named like one of ours is not shadowed.
+  local strings_bsh_value="${!1}"
+  local strings_bsh_varname="$1"
+  local strings_bsh_number_of_lines strings_bsh_lines
 
   ## Check if strings_bsh_value is empty or only contains spaces/newlines.
   if [ -z "${strings_bsh_value//[[:space:]]/}" ]; then
@@ -276,12 +281,42 @@ check_is_not_empty_and_only_one_line() {
     return 1
   fi
 
-  mapfile -t strings_bsh_lines <<<"${strings_bsh_value}"
+  ## Strip one trailing newline: the '<<<' here-string appends a newline of its
+  ## own, so a legitimate single line ending in a newline would otherwise yield
+  ## two mapfile elements and be false-rejected as multi-line. A genuine
+  ## multi-line value still yields >1 element after the strip.
+  mapfile -t strings_bsh_lines <<<"${strings_bsh_value%$'\n'}"
   strings_bsh_number_of_lines="${#strings_bsh_lines[@]}"
 
   if [ "${strings_bsh_number_of_lines}" -ne 1 ]; then
     sanitize-echo --max-length "${STRINGS_BSH_REPORT_MAX}" -- "$0: ERROR: Variable '${strings_bsh_varname}' contains more than one line. Content:
 '${strings_bsh_value}'" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+check_no_control_chars() {
+  ## Rejects any control character (newline, tab, carriage return, NUL, ...) in
+  ## the named variable's value. An EMPTY value is accepted -- a caller that also
+  ## requires non-empty combines this with its own emptiness check. Use on any
+  ## value written verbatim into a line-oriented config file or passed to a
+  ## line-oriented consumer, where an embedded newline would inject an extra line.
+  if [ -z "${1:-}" ]; then
+    printf '%s\n' "$0: ERROR: ${FUNCNAME[0]}: No variable name provided to check_no_control_chars!" >&2
+    return 1
+  fi
+
+  check_variable_name "$1" || return 1
+  ## Capture via ${!1} (positional, unshadowable) BEFORE declaring the locals,
+  ## so a caller variable named like one of ours is not shadowed.
+  local strings_bsh_value="${!1}"
+  local strings_bsh_varname="$1"
+  local LC_ALL=C
+
+  if [[ "${strings_bsh_value}" =~ [[:cntrl:]] ]]; then
+    sanitize-echo --max-length "${STRINGS_BSH_REPORT_MAX}" -- "$0: ${FUNCNAME[0]}: Control character not allowed in variable '${strings_bsh_varname}'!" >&2
     return 1
   fi
 
@@ -347,11 +382,33 @@ string_quote_safe() {
 ## scientific notation such as 1.23e10
 ## negative numbers such as -1
 is_whole_number() {
+  ## LC_ALL=C so '[0-9]' cannot match Unicode digits (e.g. Arabic-Indic) under
+  ## a UTF-8 locale -- the default on Debian/CI. Without it a Unicode digit
+  ## passes here, then errors ('integer expression expected', exit 2) in a
+  ## downstream '[ -lt ]'/'[ -gt ]' whose enclosing 'if' swallows it as false.
+  local LC_ALL=C
   [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]
 }
 
+## Whole number that also fits a signed 64-bit integer, so downstream shell
+## arithmetic ([ -lt ]/[ -gt ], intmax_t) cannot error (exit 2) on it and have
+## that error swallowed by an enclosing 'if' as a false. INT64_MAX =
+## 9223372036854775807.
+is_whole_number_int64() {
+  is_whole_number "$1" || return 1
+  ## No leading zeros (is_whole_number guarantees), so decimal length, then byte
+  ## order for equal-length digit strings, give the numeric order.
+  [ "${#1}" -lt 19 ] && return 0
+  # shellcheck disable=SC2071
+  ## Intentional STRING comparison: '-gt' would itself overflow. Digit-only,
+  ## equal length -> byte order == numeric order in any locale.
+  [ "${#1}" -eq 19 ] && [[ ! "$1" > "9223372036854775807" ]]
+}
+
 ## same results as is_whole_number, but also allows negative numbers
-is_integer(){
+is_integer() {
+  ## LC_ALL=C so '[0-9]' cannot match Unicode digits under a UTF-8 locale.
+  local LC_ALL=C
   [[ "$1" =~ ^(0|-?[1-9][0-9]*)$ ]]
 }
 
@@ -388,7 +445,10 @@ gpg_bash_lib_function_displaytime() {
   local T Y D H M S sep
   T="${1-0}"
 
-  if ! is_whole_number "${T}"; then
+  ## Bound the magnitude: a value over INT64_MAX passes a plain whole-number
+  ## check but then overflows (wraps) in the '$(( ))' arithmetic below, giving a
+  ## garbage duration. Reject it to the safe 0 fallback instead.
+  if ! is_whole_number_int64 "${T}"; then
     T=0
   fi
 
@@ -434,6 +494,8 @@ gpg_bash_lib_function_displaytime() {
 
 check_variable_name() {
   ## Ensures a string is a valid Bash variable name.
+  ## LC_ALL=C prevents 'A-Za-z' from matching Unicode characters.
+  local LC_ALL=C
   [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
 }
 
@@ -525,6 +587,13 @@ string_bsh_tests() {
   run_test "one_line: rejects multi-line string" check_is_not_empty_and_only_one_line 1 test_value $'Hello\nWorld'
   run_test "one_line: accepts normal text" check_is_not_empty_and_only_one_line 0 test_value "Hello, World!"
   run_test "one_line: accepts text with surrounding spaces" check_is_not_empty_and_only_one_line 0 test_value "  Hello  "
+
+  run_test "no_control_chars: accepts empty" check_no_control_chars 0 test_value ""
+  run_test "no_control_chars: accepts comma-separated layouts" check_no_control_chars 0 test_value "us,de,cz"
+  run_test "no_control_chars: accepts option with colon" check_no_control_chars 0 test_value "grp:alt_shift_toggle"
+  run_test "no_control_chars: rejects embedded newline" check_no_control_chars 1 test_value $'us\nde'
+  run_test "no_control_chars: rejects tab" check_no_control_chars 1 test_value $'us\tde'
+  run_test "no_control_chars: rejects carriage return" check_no_control_chars 1 test_value $'us\rde'
 
   ## check_valid_linux_user_account_name tests
   ## Regex: ^[a-zA-Z_][a-zA-Z0-9_-]*\$?$ (SYS_NAME_REGEX)

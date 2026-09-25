@@ -1,28 +1,23 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## This script gets 'source'ed by:
-## set-console-keymap
-## set-grub-keymap
-## set-labwc-keymap
-## set-system-keymap
-## This script acts as a "main program", not as a library.
+## Sourced by the set-console-keymap / set-grub-keymap / set-labwc-keymap /
+## set-system-keymap wrappers, which call 'main "$@"' after sourcing. main()
+## owns strict-mode, setup, and parse_cmd; the function definitions stay pure so
+## a unit test can source this file (was_executed false -> main does not run) and
+## call one function without executing the program or inheriting strict-mode.
+
+## provides was_executed
+# shellcheck source=./check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
 
 # shellcheck source=./log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 
 # shellcheck source=./has.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.bsh
-
-set -o errexit
-set -o nounset
-set -o errtrace
-set -o pipefail
-shopt -s inherit_errexit
-shopt -s shift_verbose
-export LC_ALL=C
 
 error_handler() {
   exit_code="${?}"
@@ -397,6 +392,17 @@ set_labwc_keymap() {
   ## Write the new config file contents and load them into 'labwc'.
   if ! overwrite "${labwc_config_path}" "${labwc_env_file_string}" >/dev/null ; then
     log error "${FUNCNAME[0]}: Cannot write new 'labwc' environment config '${labwc_config_path}'!"
+    ## The '--no-persist' path moves the original config to a backup before this
+    ## overwrite; restore it so a failed overwrite does not orphan (lose) the
+    ## user's existing config.
+    if [ -n "${labwc_config_bak_path}" ]; then
+      ## --no-target-directory: restore to the exact path name. A plain 'mv'
+      ## would move the backup INTO a directory if a concurrent process replaced
+      ## the config path with one, orphaning the config; fail loudly instead.
+      if ! mv --no-target-directory -- "${labwc_config_bak_path}" "${labwc_config_path}" ; then
+        log error "${FUNCNAME[0]}: Also failed to restore backup 'labwc' environment config from '${labwc_config_bak_path}' to '${labwc_config_path}'!"
+      fi
+    fi
     return 1
   fi
 
@@ -439,7 +445,9 @@ set_labwc_keymap() {
   ## configuration back (or just delete the new config file if there wasn't an
   ## old config file).
   if [ -n "${labwc_config_bak_path}" ]; then
-    if ! mv -- "${labwc_config_bak_path}" "${labwc_config_path}" ; then
+    ## --no-target-directory: restore to the exact path name, never move the
+    ## backup into a directory left at the config path by a concurrent process.
+    if ! mv --no-target-directory -- "${labwc_config_bak_path}" "${labwc_config_path}" ; then
       log error "${FUNCNAME[0]}: Cannot move backup 'labwc' environment config '${labwc_config_bak_path}' to original location '${labwc_config_path}'!"
       return 1
     fi
@@ -1194,6 +1202,27 @@ unknown_option_error() {
   exit 1
 }
 
+## Reject control characters (newline, tab, NUL, etc.) in layout arguments.
+## The layout / variant / option args are written verbatim into config files
+## ('/etc/default/keyboard', the 'labwc' environment file). An embedded newline
+## would inject a stray line into the written config, corrupting it. The
+## per-token validators split their check strings on newlines, so individually
+## valid tokens smuggled via an embedded newline can otherwise pass validation.
+## This is the untrusted CLI / D-Bus argument vector; the interactive UI reads a
+## single line via 'read' and so cannot carry a newline. An omitted variant /
+## option arg is legal (empty), so check_no_control_chars -- which accepts empty
+## -- is the right shared primitive (from strings.bsh, sourced via log_run_die.sh).
+reject_control_chars_in_args() {
+  local skl_arg_value
+  ## skl_arg_value is passed BY NAME to check_no_control_chars (read there via
+  ## ${!1}); shellcheck cannot see that indirect use.
+  # shellcheck disable=SC2034
+  for skl_arg_value in "$@"; do
+    check_no_control_chars skl_arg_value || return 1
+  done
+  return 0
+}
+
 parse_cmd() {
   while [ -n "${1:-}" ]; do
     case "$1" in
@@ -1277,6 +1306,8 @@ parse_cmd() {
   args=( "$@" )
   true "${FUNCNAME[0]}: args: ${args[*]}"
 
+  reject_control_chars_in_args "${args[@]}" || return 1
+
   if [ "${do_build_all_grub_keymaps}" = "true" ]; then
     ## Build all GRUB keymaps if requested.
     build_all_grub_keymaps
@@ -1326,56 +1357,72 @@ parse_cmd() {
 #   true
 # }
 
-trap "error_handler" ERR
-trap "exit_handler" EXIT
+main() {
+  set -o errexit
+  set -o nounset
+  set -o errtrace
+  set -o pipefail
+  shopt -s inherit_errexit
+  shopt -s shift_verbose
+  export LC_ALL=C
 
-log notice "$0: Start."
-printf '%s\n' ""
+  trap "error_handler" ERR
+  trap "exit_handler" EXIT
 
-has safe-rm
-has mktemp
-has mv
-has dirname
-has mkdir
-has overwrite
-has stcat
-has sponge
-has timeout
-has ischroot
-has jq
-has tr
-has loginctl
-has pgrep
-has "${HELPER_SCRIPTS_PATH:-}/usr/libexec/helper-scripts/query-sock-pid"
-has localectl-static
+  log notice "$0: Start."
+  printf '%s\n' ""
 
-timeout_command=("timeout" "--kill-after" "5" "5")
+  has safe-rm
+  has mktemp
+  has mv
+  has dirname
+  has mkdir
+  has overwrite
+  has stcat
+  has sponge
+  has timeout
+  has ischroot
+  has jq
+  has tr
+  has loginctl
+  has pgrep
+  has "${HELPER_SCRIPTS_PATH:-}/usr/libexec/helper-scripts/query-sock-pid"
+  has localectl-static
 
-skl_xkb_env_var_names=(
-  'XKB_DEFAULT_LAYOUT'
-  'XKB_DEFAULT_VARIANT'
-  'XKB_DEFAULT_OPTIONS'
-)
-skl_default_keyboard_var_names=(
-  'XKBLAYOUT'
-  'XKBVARIANT'
-  'XKBOPTIONS'
-)
+  timeout_command=("timeout" "--kill-after" "5" "5")
 
-args=()
-skl_interactive='false'
-do_live_changes='true'
-do_persist='true'
-no_reload='false'
-do_build_all_grub_keymaps='false'
-do_force='false'
-did_prompt_for_luks='false'
+  skl_xkb_env_var_names=(
+    'XKB_DEFAULT_LAYOUT'
+    'XKB_DEFAULT_VARIANT'
+    'XKB_DEFAULT_OPTIONS'
+  )
+  skl_default_keyboard_var_names=(
+    'XKBLAYOUT'
+    'XKBVARIANT'
+    'XKBOPTIONS'
+  )
 
-[[ -v "HOME" ]] || HOME="/home/user"
-labwc_config_path="${HOME}/.config/labwc/environment"
+  args=()
+  skl_interactive='false'
+  do_live_changes='true'
+  do_persist='true'
+  no_reload='false'
+  do_build_all_grub_keymaps='false'
+  do_force='false'
+  did_prompt_for_luks='false'
 
-grub_kb_layout_dir="${grub_kb_layout_dir:-/boot/grub/kb_layouts}"
+  [[ -v "HOME" ]] || HOME="/home/user"
+  labwc_config_path="${HOME}/.config/labwc/environment"
 
-localectl_kb_layouts="$("${timeout_command[@]}" localectl-static --no-pager list-x11-keymap-layouts)"
+  grub_kb_layout_dir="${grub_kb_layout_dir:-/boot/grub/kb_layouts}"
 
-parse_cmd "$@"
+  localectl_kb_layouts="$("${timeout_command[@]}" localectl-static --no-pager list-x11-keymap-layouts)"
+
+  parse_cmd "$@"
+}
+
+## Auto-run only when executed directly. The wrappers call 'main "$@"' after
+## sourcing; a unit test sources this file and calls a function without running.
+if was_executed "${BASH_SOURCE[0]}"; then
+  main "$@"
+fi
