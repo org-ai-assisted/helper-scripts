@@ -1,0 +1,67 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Rebuild and MOK-sign the Oracle VirtualBox Guest Additions kernel modules.
+##
+## The Guest Additions (installed from the 'virtualbox-guest-additions-iso'
+## package to /opt via VBoxLinuxAdditions.run) are NOT DKMS modules, so
+## 'rebuild-dkms-modules' does not reach them. Their own 'rcvboxadd setup'
+## rebuilds vboxguest/vboxsf/vboxvideo and, under Secure Boot, signs them with
+## /var/lib/shim-signed/mok/MOK.{der,priv} -- the SAME per-machine MOK that
+## 'shim-signed-mok-setup' provisions. So once that MOK exists, triggering the GA
+## setup signs the modules with it, letting them load under Secure Boot after the
+## MOK is enrolled (exactly like the DKMS modules). No-op when the Guest Additions
+## are not installed (bare metal, non-VirtualBox).
+
+## provides was_executed; a failed load must abort LOUDLY in every invocation mode
+## (a 'bash <script>' call ignores the shebang -e), never silently skip main().
+# shellcheck source=../libexec/helper-scripts/check_runtime.bsh
+if ! source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh (set HELPER_SCRIPTS_PATH)" >&2
+  exit 1
+fi
+# shellcheck source=../libexec/helper-scripts/log_run_die.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
+# shellcheck source=../libexec/helper-scripts/as_root.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/as_root.sh
+# shellcheck source=../libexec/helper-scripts/has.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.bsh
+
+rebuild_vbox_ga_modules() {
+  as_root
+
+  if ! has rcvboxadd; then
+    log notice "VirtualBox Guest Additions not installed ('rcvboxadd' absent); nothing to rebuild or sign, ok."
+    return 0
+  fi
+
+  ## 'rcvboxadd setup' rebuilds the GA modules; under Secure Boot it signs them
+  ## with the MOK at /var/lib/shim-signed/mok/MOK.{der,priv} (provisioned by
+  ## shim-signed-mok-setup), so they can load under Secure Boot once enrolled.
+  log notice "Rebuilding + signing VirtualBox Guest Additions kernel modules via 'rcvboxadd setup'..."
+  if ! log_run notice rcvboxadd setup; then
+    log error "'rcvboxadd setup' failed; VirtualBox Guest Additions modules may be unsigned and fail to load under Secure Boot."
+    return 1
+  fi
+  log notice "Successfully rebuilt + signed VirtualBox Guest Additions kernel modules."
+}
+
+main() {
+  set -o errexit
+  set -o nounset
+  set -o pipefail
+  set -o errtrace
+  shopt -s inherit_errexit
+  shopt -s shift_verbose
+  export LC_ALL=C
+
+  rebuild_vbox_ga_modules
+}
+
+if was_executed "${BASH_SOURCE[0]}"; then
+  main "$@"
+fi

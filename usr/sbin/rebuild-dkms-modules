@@ -1,14 +1,15 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-set -o errexit
-set -o nounset
-set -o errtrace
-set -o pipefail
-
-export LC_ALL='C'
+## provides was_executed; a failed load must abort LOUDLY in every invocation mode
+## (a 'bash <script>' call ignores the shebang -e), never silently skip main().
+# shellcheck source=../libexec/helper-scripts/check_runtime.bsh
+if ! source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh (set HELPER_SCRIPTS_PATH)" >&2
+  exit 1
+fi
 
 # shellcheck source=../libexec/helper-scripts/log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
@@ -71,4 +72,18 @@ rebuild_dkms_modules() {
   fi
 }
 
-rebuild_dkms_modules
+main() {
+  set -o errexit
+  set -o nounset
+  set -o pipefail
+  set -o errtrace
+  shopt -s inherit_errexit
+  shopt -s shift_verbose
+  export LC_ALL=C
+
+  rebuild_dkms_modules "$@"
+}
+
+if was_executed "${BASH_SOURCE[0]}"; then
+  main "$@"
+fi
