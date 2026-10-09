@@ -1,24 +1,13 @@
 .\" generated with Ronn-NG/v0.10.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.10.1
-.TH "DPKG\-RECONFIGURE\-NONINTERACTIVE" "8" "October 2026" "helper-scripts" "helper-scripts Manual"
+.TH "DPKG\-RECONFIGURE\-NONINTERACTIVE" "8" "January 2020" "helper-scripts" "helper-scripts Manual"
 .SH "NAME"
 \fBdpkg\-reconfigure\-noninteractive\fR \- wrapper to run \fBdpkg\-reconfigure\fR non\-interactively
 .SH "SYNOPSIS"
-\fBdpkg\-reconfigure\-noninteractive\fR [option]s pkg\-name
-.SH "Description"
-Simple wrapper that
-.IP "\(bu" 4
-sets environment variables for non\-interactive use,
-.IP "\(bu" 4
-prevents daemons from restarting during reconfiguration,
-.IP "" 0
-.P
-then forwards all arguments to \fBdpkg\-reconfigure\fR\.
-.P
-Under the non\-interactive frontend \fBdpkg\-reconfigure\fR does not ask the debconf questions again\. It re\-applies the answers already stored in the debconf database, so this is the right tool to regenerate a package's configuration from values seeded earlier (for example with \fBdebconf\-set\-selections\fR) without any prompt\.
-.P
-Unlike \fBdpkg\-noninteractive\fR no \fB\-\-force\-conf*\fR option is added, because \fBdpkg\-reconfigure\fR does not accept dpkg conffile options\.
-.SH "Examples"
+\fBdpkg\-reconfigure\-noninteractive\fR [args\|\.\|\.\|\.]
+.SH "DESCRIPTION"
+Simple wrapper that sets environment variables for non\-interactive use, prevents daemons from restarting during reconfiguration, then forwards all arguments to \fBdpkg\-reconfigure\fR\. No debconf prompts will appear during reconfiguration\.
+.SH "EXAMPLES"
 \fBsudo dpkg\-reconfigure\-noninteractive tzdata\fR
 .P
 \fBsudo dpkg\-reconfigure\-noninteractive keyboard\-configuration\fR

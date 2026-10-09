@@ -2,31 +2,20 @@ dpkg-reconfigure-noninteractive(8) -- wrapper to run `dpkg-reconfigure` non-inte
 =============================================
 
 <!--
-# Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+# Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 # See the file COPYING for copying conditions.
 -->
 
 ## SYNOPSIS
-`dpkg-reconfigure-noninteractive` [option]s pkg-name
+`dpkg-reconfigure-noninteractive` [args...]
 
-## Description
-Simple wrapper that
+## DESCRIPTION
+Simple wrapper that sets environment variables for non-interactive use,
+prevents daemons from restarting during reconfiguration, then forwards
+all arguments to `dpkg-reconfigure`. No debconf prompts will appear
+during reconfiguration.
 
-* sets environment variables for non-interactive use,
-* prevents daemons from restarting during reconfiguration,
-
-then forwards all arguments to `dpkg-reconfigure`.
-
-Under the non-interactive frontend `dpkg-reconfigure` does not ask the
-debconf questions again. It re-applies the answers already stored in the
-debconf database, so this is the right tool to regenerate a package's
-configuration from values seeded earlier (for example with
-`debconf-set-selections`) without any prompt.
-
-Unlike `dpkg-noninteractive` no `--force-conf*` option is added, because
-`dpkg-reconfigure` does not accept dpkg conffile options.
-
-## Examples
+## EXAMPLES
 `sudo dpkg-reconfigure-noninteractive tzdata`
 
 `sudo dpkg-reconfigure-noninteractive keyboard-configuration`
