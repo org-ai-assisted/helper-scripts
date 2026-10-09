@@ -16,16 +16,15 @@
 
 ## NOTE: code duplication: Function pkg_installed is duplicated elsewhere in derivative-maker source code.
 
-## Contract: tests the dpkg WANT flag (field 1 of '${Status}', the requested
-## selection), NOT the actual install state (field 3). Consequences:
-##  - want 'install' returns 0 even when the state is half-installed / unpacked /
-##    config-files (present per policy, but not necessarily usable).
-##  - a held-but-installed package (want 'hold') returns 1 although it is installed.
-## Callers needing "usable right now" must inspect the state field themselves.
+## Contract: '${Status}' is '<want> <error-flag> <status>'. Returns 0 only for
+## 'install ok installed', so these return 1:
+##  - status half-installed / unpacked / half-configured / config-files;
+##  - error flag reinstreq;
+##  - want 'hold' (held-but-installed), 'deinstall', 'purge'.
 pkg_installed() {
    ## 'local' does not break 'sh'.
    local package_name dpkg_query_output
-   local requested_action status error_state
+   local want error_flag status
 
    package_name="$1"
    ## Cannot use '&>' because it is a bashism.
@@ -34,20 +33,20 @@ pkg_installed() {
    ## install ok half-configured
    ## install ok installed
 
-   requested_action=$(printf '%s' "${dpkg_query_output}" | awk '{print $1}')
-   status=$(printf '%s' "${dpkg_query_output}" | awk '{print $2}')
-   error_state=$(printf '%s' "${dpkg_query_output}" | awk '{print $3}')
+   want=$(printf '%s' "${dpkg_query_output}" | awk '{print $1}')
+   error_flag=$(printf '%s' "${dpkg_query_output}" | awk '{print $2}')
+   status=$(printf '%s' "${dpkg_query_output}" | awk '{print $3}')
 
-   if ! [ "${requested_action}" = 'install' ]; then
-      true "$0: INFO: package ${package_name} requested_action ${requested_action} is not 'install'."
+   if ! [ "${want}" = 'install' ]; then
+      true "$0: INFO: package ${package_name} want ${want} is not 'install'."
       return 1
    fi
-   if ! [ "${status}" = 'ok' ]; then
-      true "$0: INFO: package ${package_name} requested_action ${status} is not 'ok'."
+   if ! [ "${error_flag}" = 'ok' ]; then
+      true "$0: INFO: package ${package_name} error_flag ${error_flag} is not 'ok'."
       return 1
    fi
-   if ! [ "${error_state}" = 'installed' ]; then
-      true "$0: INFO: package ${package_name} requested_action ${error_state} is not 'installed'."
+   if ! [ "${status}" = 'installed' ]; then
+      true "$0: INFO: package ${package_name} status ${status} is not 'installed'."
       return 1
    fi
 
