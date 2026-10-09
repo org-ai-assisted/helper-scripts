@@ -40,8 +40,16 @@ You might be able to create a privleap socket by executing: sudo leapctl --creat
       return 0
    fi
 
-   if ! socat UNIX-CONNECT:"${comm_socket}",connect-timeout=2 STDIO <<< '' >/dev/null 2>&1 ; then
-      leaprun_useable_result="${0}: WARNING: privleapd is not reachable on socket '${comm_socket}'. Cannot use privleap."
+   ## Keep socat's exit code and stderr: an exec denial (such as AppArmor, exit
+   ## code 126) must not read the same as a dead privleapd.
+   local socat_output socat_exit_code
+   socat_exit_code=0
+   socat_output="$(socat UNIX-CONNECT:"${comm_socket}",connect-timeout=2 STDIO <<< '' 2>&1 >/dev/null)" || socat_exit_code="$?"
+   if [ "${socat_exit_code}" != '0' ]; then
+      leaprun_useable_result="${0}: WARNING: privleapd is not reachable on socket '${comm_socket}'. Cannot use privleap.
+
+socat exit code: '${socat_exit_code}'
+socat output: '${socat_output}'"
       leaprun_useable_output "${leaprun_useable_result}"
       return 0
    fi
