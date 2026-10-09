@@ -50,12 +50,10 @@ dist-ai-tests:
   ## skip so the --fuzz lane is not failed by an unauthorized-skip verdict.
   ## Harmless to --core, which does not run fuzz suites.
   ##
-  ## helper-scripts-lib-tests: three use_leaprun cases need an unprivileged bwrap
-  ## user namespace (see bubblewrap above), permanently blocked on GitHub-hosted
-  ## runners by the host LSM -- a CI-infra limit, not a code gap. Authorize the
-  ## core suite's skip so those three do not red the run. The locale-collation
-  ## cases now RUN (locales-all), and allow-skip authorizes only SKIPS, never
-  ## FAILURES -- a real regression in any case still fails the run.
+  ## helper-scripts-lib-tests-bwrap: the use_leaprun cases need an unprivileged
+  ## bwrap user namespace (see bubblewrap above), permanently blocked on
+  ## GitHub-hosted runners by the host LSM -- a CI-infra limit, not a code gap.
+  ## Only that sub-suite is authorized; helper-scripts-lib-tests stays strict.
   allow-skip:
     - helper-scripts-lib-tests-fuzz-atheris
-    - helper-scripts-lib-tests
+    - helper-scripts-lib-tests-bwrap
