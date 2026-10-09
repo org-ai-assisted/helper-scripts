@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
@@ -45,6 +45,26 @@ exit_handler() {
    output_cmd "### END: ### Exiting with exit_code '${exit_code}' indicating '${meaning}'."
    exit "${exit_code}"
 }
+
+strict_mode_and_traps() {
+   set -o errexit
+   set -o nounset
+   set -o errtrace
+   set -o pipefail
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+
+   trap "error_handler" ERR
+   trap "exit_handler" EXIT
+}
+
+## Executed: before the sibling sources, so a broken sibling still exits
+## through exit_handler with a contract code (1), never a raw bash status such
+## as 2 (which sdwdate reads as 'busy'). Sourced (unit tests): functions only.
+if was_executed "${BASH_SOURCE[0]}"; then
+   strict_mode_and_traps
+fi
 
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/tor_enabled_check
 
@@ -541,17 +561,7 @@ te_pe_tb_check() {
 }
 
 main() {
-   set -o errexit
-   set -o nounset
-   set -o errtrace
-   set -o pipefail
-   shopt -s inherit_errexit
-   shopt -s shift_verbose
-   export LC_ALL=C
-
-   trap "error_handler" ERR
-   trap "exit_handler" EXIT
-
+   strict_mode_and_traps
    te_pe_tb_check "$@"
 }
 
