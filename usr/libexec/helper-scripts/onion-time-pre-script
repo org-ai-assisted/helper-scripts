@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
@@ -10,16 +10,10 @@
 
 ## provides was_executed
 # shellcheck source=./check_runtime.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
-
-if was_executed "${BASH_SOURCE[0]}"; then
-   set -o errexit
-   set -o nounset
-   set -o errtrace
-   set -o pipefail
-   shopt -s inherit_errexit
-   shopt -s shift_verbose
-   export LC_ALL=C
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
 fi
 
 output_cmd() {
@@ -27,14 +21,16 @@ output_cmd() {
    printf '%s\n' "__ ${msg}"
 }
 
+## Every deliberate exit assigns exit_code and calls 'exit', which never fires
+## ERR. So an ERR is always an unexpected failure: report it as the error code
+## 1, never pass a raw status through (2 would read as 'busy' to sdwdate).
 error_handler() {
-   exit_code="$?"
+   local raw_exit_code="$?"
    printf '%s\n' "\
 BASH_COMMAND: ${BASH_COMMAND}
-exit_code: ${exit_code}"
+raw_exit_code: ${raw_exit_code}"
+   exit_code=1
 }
-
-trap "error_handler" ERR
 
 exit_handler() {
    if [ "${exit_code:-}" = "" ]; then
@@ -54,7 +50,27 @@ exit_handler() {
    exit "${exit_code}"
 }
 
-trap "exit_handler" EXIT
+strict_mode_and_traps() {
+   ## An inherited exit_code would be taken as deliberate by exit_handler.
+   exit_code=""
+   set -o errexit
+   set -o nounset
+   set -o errtrace
+   set -o pipefail
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+
+   trap "error_handler" ERR
+   trap "exit_handler" EXIT
+}
+
+## Executed: before the sibling sources, so a broken sibling still exits
+## through exit_handler with the error code 1. Sourced (unit tests): functions
+## only.
+if was_executed "${BASH_SOURCE[0]}"; then
+   strict_mode_and_traps
+fi
 
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/tor_enabled_check
 
@@ -550,7 +566,12 @@ te_pe_tb_check() {
    exit "${exit_code}"
 }
 
+main() {
+   strict_mode_and_traps
+   te_pe_tb_check "$@"
+}
+
 ## Only auto-run when executed, not when sourced (unit tests source it).
 if was_executed "${BASH_SOURCE[0]}"; then
-   te_pe_tb_check "$@"
+   main "$@"
 fi

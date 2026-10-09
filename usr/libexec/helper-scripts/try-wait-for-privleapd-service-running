@@ -1,0 +1,50 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
+
+## Note that if you need a comm socket for the active user to be present, you
+## should use try-wait-for-privleap-socket-ready-instead. privleap may be "up"
+## before the socket for the active user is open.
+
+if [ -n "${FAKEROOTKEY:-}" ]; then
+   export SYSTEMCTL_FORCE_BUS=1
+fi
+
+delay_ctr=0
+
+while (( delay_ctr < 120 )); do
+   if ! privleapd_state="$(timeout --kill-after=3 3 systemctl --no-pager --no-block show privleapd.service \
+      --property LoadState --property ActiveState 2>/dev/null)" ; then
+      true "INFO: systemctl non-functional."
+      exit 0
+   fi
+   case "${privleapd_state}" in
+      *'ActiveState=active'*)
+         break
+         ;;
+      *'ActiveState=failed'*)
+         break
+         ;;
+   esac
+
+   ## LoadState check must be done after ActiveState check, as a unit with bad
+   ## configuration might be active if bad configuration was loaded after unit
+   ## start.
+   if ! [[ "${privleapd_state}" == *'LoadState=loaded'* ]]; then
+      break
+   fi
+
+   (( delay_ctr++ )) || true
+   sleep 1
+done

@@ -11,7 +11,11 @@
 
 ## provides was_executed
 # shellcheck source=./check_runtime.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+  exit 1
+fi
 
 # shellcheck source=./log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh

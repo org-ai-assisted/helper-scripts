@@ -32,14 +32,28 @@ dist-ai-tests:
   ## load-time 'has' preconditions of set-keyboard-layout.sh, which set-grub-keymap
   ## sources whole. Absent, 'has sponge' aborts via error_handler before any test
   ## logic runs, so set-keyboard-layout-tests fails 2/4. None ship in trixie-slim.
-  ## bubblewrap: the use_leaprun UID-socket / empty-pid tests fake /run/privleapd in
-  ## an unprivileged bwrap namespace; without it they SKIP, losing coverage of the
-  ## privleap comm-socket-by-UID regression. Install it so CI RUNS them.
-  apt-packages: "python3 python3-pytest python3-hypothesis python3-pyqt5 safe-rm curl ncurses-bin python3-z3 moreutils jq procps systemd bubblewrap"
+  ## bubblewrap: the use_leaprun UID-socket / hidepid / stale-socket tests fake
+  ## /run/privleapd in an unprivileged bwrap namespace. Installed so they RUN where
+  ## unprivileged user namespaces are available; on GitHub-hosted runners the host
+  ## LSM apparmor_restrict_unprivileged_userns blocks that (container SYS_ADMIN /
+  ## apparmor=unconfined cannot override a host-level LSM), so they SKIP there --
+  ## authorized below.
+  ## locales-all: the locale-collation cases (check_variable_name_locale,
+  ## is_whole_number_locale) need a full-collation UTF-8 locale (e.g. en_US.UTF-8)
+  ## to exercise the range-expansion bug; C / C.UTF-8 / POSIX do not expand ranges
+  ## and trixie-slim generates none, so without it they SKIP. Ship the
+  ## pre-generated locales so they RUN.
+  apt-packages: "python3 python3-pytest python3-hypothesis python3-pyqt5 safe-rm curl ncurses-bin python3-z3 moreutils jq procps systemd bubblewrap locales-all"
   ## The atheris coverage-guided variant is OPTIONAL: it exits 77 (skip) unless
   ## atheris is installed, and atheris is not an apt package (the real
   ## coverage-fuzzing runs in the dedicated ClusterFuzzLite lane). Authorize its
   ## skip so the --fuzz lane is not failed by an unauthorized-skip verdict.
   ## Harmless to --core, which does not run fuzz suites.
+  ##
+  ## helper-scripts-lib-tests-bwrap: the use_leaprun cases need an unprivileged
+  ## bwrap user namespace (see bubblewrap above), permanently blocked on
+  ## GitHub-hosted runners by the host LSM -- a CI-infra limit, not a code gap.
+  ## Only that sub-suite is authorized; helper-scripts-lib-tests stays strict.
   allow-skip:
     - helper-scripts-lib-tests-fuzz-atheris
+    - helper-scripts-lib-tests-bwrap

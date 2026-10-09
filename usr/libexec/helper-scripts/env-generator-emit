@@ -1,0 +1,59 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## style-ok: no-strict -- profile.d scripts may not expect the strict header.
+
+## Prints all variables set or modified by a particular /etc/profile.d script
+## with a name matching this script. When symlinked into a
+## systemd-environment-generators directory with the name of a script under
+## /etc/profile.d, the corresponding profile script's set and modified
+## variables will be loaded into systemd.
+##
+## REMINDER: This script must not `cd`, change PATH, `exit`, or output a
+## non-UTF-8 value. These actions will cause unexpected environment changes,
+## sourcing script misbehavior, sourcing script termination, or environment
+## load failures, respectively.
+
+env_sorted_safe() {
+  local env_item
+  while IFS= read -r -d '' env_item; do
+    printf '%q\n' "${env_item}"
+  done < <(env --null | sort --zero-terminated)
+}
+
+name="${0##*/}"
+script="/etc/profile.d/${name}.sh"
+
+if [ -r "${script}" ]; then
+  before="$(env_sorted_safe)"
+
+  # shellcheck disable=SC1090
+  . "${script}" >/dev/null 2>&1 || true
+
+  after="$(env_sorted_safe)"
+  out_env_data="$(comm -13 <(printf '%s\n' "${before}") <(printf '%s\n' "${after}"))"
+
+  while read -r out_env_line; do
+    ## out_env_line is a shell-quoted environment variable item, word splitting
+    ## expands it back into its original form safely.
+    # shellcheck disable=SC2086
+    out_env_item=${out_env_line}
+    out_env_name="${out_env_item%%=*}"
+    out_env_val="${out_env_item#*=}"
+    ## Backslashes have to be escaped first.
+    out_env_val="${out_env_val//\\/\\\\}"
+    ## Dollar signs have to be escaped to avoid triggering systemd's variable
+    ## expansion.
+    out_env_val="${out_env_val//\$/\\\$}"
+    ## Double quotes have to be escaped as the value will be wrapped in them.
+    out_env_val="${out_env_val//\"/\\\"}"
+    ## No other characters need escaped. Technically backticks can be escaped but
+    ## they are accepted unescaped without issues.
+    ##
+    ## The value and only the value must be wrapped in double quotes so newlines
+    ## in the value are allowed.
+    printf '%s\n' "${out_env_name}=\"${out_env_val}\""
+  done
+fi
