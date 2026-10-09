@@ -11,6 +11,9 @@
 
 ## NOTE: Must not include bashisms!
 
+## NOTE: Fully installed packages only!
+##       'dpkg-query' output 'install ok installed' only.
+
 ## NOTE: code duplication: Function pkg_installed is duplicated elsewhere in derivative-maker source code.
 
 ## Contract: tests the dpkg WANT flag (field 1 of '${Status}', the requested
@@ -32,16 +35,22 @@ pkg_installed() {
    ## install ok installed
 
    requested_action=$(printf '%s' "${dpkg_query_output}" | awk '{print $1}')
-   # shellcheck disable=SC2034
    status=$(printf '%s' "${dpkg_query_output}" | awk '{print $2}')
-   # shellcheck disable=SC2034
    error_state=$(printf '%s' "${dpkg_query_output}" | awk '{print $3}')
 
-   if [ "${requested_action}" = 'install' ]; then
-      true "$0: INFO: ${package_name} is installed, ok."
-      return 0
+   if ! [ "${requested_action}" = 'install' ]; then
+      true "$0: INFO: package ${package_name} requested_action ${requested_action} is not 'install'."
+      return 1
+   fi
+   if ! [ "${status}" = 'ok' ]; then
+      true "$0: INFO: package ${package_name} requested_action ${status} is not 'ok'."
+      return 1
+   fi
+   if ! [ "${error_state}" = 'installed' ]; then
+      true "$0: INFO: package ${package_name} requested_action ${error_state} is not 'installed'."
+      return 1
    fi
 
-   true "$0: INFO: ${package_name} is not installed, ok."
-   return 1
+   true "$0: INFO: ${package_name} is installed, ok."
+   return 0
 }
