@@ -21,11 +21,15 @@ output_cmd() {
    printf '%s\n' "__ ${msg}"
 }
 
+## Every deliberate exit assigns exit_code and calls 'exit', which never fires
+## ERR. So an ERR is always an unexpected failure: report it as the error code
+## 1, never pass a raw status through (2 would read as 'busy' to sdwdate).
 error_handler() {
-   exit_code="$?"
+   local raw_exit_code="$?"
    printf '%s\n' "\
 BASH_COMMAND: ${BASH_COMMAND}
-exit_code: ${exit_code}"
+raw_exit_code: ${raw_exit_code}"
+   exit_code=1
 }
 
 exit_handler() {
@@ -47,6 +51,8 @@ exit_handler() {
 }
 
 strict_mode_and_traps() {
+   ## An inherited exit_code would be taken as deliberate by exit_handler.
+   exit_code=""
    set -o errexit
    set -o nounset
    set -o errtrace
@@ -60,8 +66,8 @@ strict_mode_and_traps() {
 }
 
 ## Executed: before the sibling sources, so a broken sibling still exits
-## through exit_handler with a contract code (1), never a raw bash status such
-## as 2 (which sdwdate reads as 'busy'). Sourced (unit tests): functions only.
+## through exit_handler with the error code 1. Sourced (unit tests): functions
+## only.
 if was_executed "${BASH_SOURCE[0]}"; then
    strict_mode_and_traps
 fi
