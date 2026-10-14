@@ -116,7 +116,7 @@ fi
 
 ## Reject a weak password unless the operator overrode the strength gate.
 if [ "${allow_weak_passphrase}" = 'false' ]; then
-   if ! printf '%s' "${password}" | password_strength_check; then
+   if ! printf '%s' "${password}" | password_strength_check "${user}"; then
       printf "%s\n" "${0}: ERROR: New password is too weak (the maximum strength score is required). Re-run with --allow-weak-passphrase to override. No changes made." >&2
       exit 1
    fi
