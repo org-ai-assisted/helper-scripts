@@ -1,0 +1,240 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Pack files from named paths, a named dir, or a root filesystem overlay into
+## a squashfs image. This image can then be used by Calamares to augment an
+## installation.
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
+
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.bsh
+
+me="${BASH_SOURCE[0]##*/}"
+
+default_output="/run/install-augment-data/augment.squashfs"
+
+usage() {
+   cat <<EOF
+Usage: ${me} [options] <path> [<path> ...]
+       ${me} [options] --from-dir <dir>
+       ${me} [options] --from-overlay
+
+Pack files into a squashfs image suitable for augmenting an installation.
+
+Content source:
+  <path> ...            pack the specified files / dirs, preserving their
+                        layout.
+  --from-dir <dir>      pack the specified directory.
+  --from-overlay <dir>  find the upperdir of an overlayfs at the specified
+                        directory and pack it.
+
+Options:
+  --output <path>       output squashfs. Default '${default_output}'.
+  --help                show this help.
+EOF
+}
+
+error() {
+   printf '%s\n' "${me}: ERROR: $*" >&2
+   exit 1
+}
+
+## Translate a limited set of octal escapes into the characters they represent.
+## This may not be sufficient for all edge cases.
+##
+## TODO: Can we replace this with a call to `printf '%b'`?
+mountinfo_unescape() {
+   local value
+   value="$1"
+   value="${value//\\040/ }"
+   value="${value//\\011/$'\t'}"
+   value="${value//\\012/$'\n'}"
+   value="${value//\\134/\\}"
+   printf '%s' "${value}"
+}
+
+## Resolve the upperdir of the overlay mounted at a given mountpoint, from
+## /proc/self/mountinfo.
+overlay_upperdir_of() {
+   local target line pre post fstype opts upper mount_point opt_item
+   local -a opt_list
+   target="$1"
+   upper=""
+   while IFS= read -r line ; do
+      ## Fields 1 - 6 have fixed meanings, field 7 up to a hyphen field are
+      ## optional fields, fields 1 - 3 after the hyphen have fixed meanings
+      ## again.
+      pre="${line%% - *}"
+      post="${line#* - }"
+      read -r _ _ _ _ mount_point _ <<< "${pre}"
+      [ "$(mountinfo_unescape "${mount_point}")" = "${target}" ] || continue
+      read -r fstype _ opts <<< "${post}"
+      [ "${fstype}" = "overlay" ] || continue
+      IFS=',' read -r -a opt_list <<< "${opts}"
+      for opt_item in "${opt_list[@]}" ; do
+         if [[ "${opt_item}" == 'upperdir='* ]]; then
+            upper="${opt_item#upperdir=}"
+         fi
+      done
+   done < /proc/self/mountinfo
+   printf '%s' "$(mountinfo_unescape "${upper}")"
+}
+
+from_dir=""
+from_overlay=""
+force="false"
+output_squashfs="${default_output}"
+path_list=()
+
+while [ "$#" -gt 0 ] ; do
+   case "$1" in
+      --from-dir)
+         [ "$#" -ge 2 ] || error "--from-dir requires a value"
+         if [[ "${2}" == -* ]]; then
+            error "--from-dir value must not start with '-'"
+         fi
+         from_dir="${2}"
+         shift 2
+         ;;
+      --from-overlay)
+         [ "$#" -ge 2 ] || error "--from-overlay requires a value"
+         if [[ "${2}" == -* ]]; then
+            error "--from-overlay value must not start with '-'"
+         fi
+         from_overlay="${2}"
+         shift 2
+         ;;
+      --output)
+         [ "$#" -ge 2 ] || error "--output requires a value"
+         if [[ "${2}" == -* ]]; then
+            error "--output value must not start with '-'"
+         fi
+         output_squashfs="${2}"
+         shift 2
+         ;;
+      --help)
+         usage
+         exit 0
+         ;;
+      --)
+         shift
+         break
+         ;;
+      -*)
+         error "unknown option: '$1' (see --help)"
+         ;;
+      *)
+         break
+         ;;
+   esac
+done
+
+while [ "$#" -gt 0 ]; do
+   path_list+=( "$1" )
+   shift
+done
+
+## Only allow one source type.
+source_type_count=0
+[ "${#path_list[@]}" -gt 0 ] && source_type_count=$(( source_type_count + 1 ))
+[ -n "${from_dir}" ] && source_type_count=$(( source_type_count + 1 ))
+[ -n "${from_overlay}" ] && source_type_count=$(( source_type_count + 1 ))
+[ "${source_count}" -eq 1 ] || error "choose exactly one of: paths, --from-dir, --from-overlay (see --help)"
+
+has mksquashfs cp safe-rm mkdir chmod realpath
+
+staging_dir=""
+cleanup() {
+   local rc="${1:-$?}"
+   if [ -n "${staging_dir}" ]; then
+      safe-rm --recursive --force -- "${staging_dir}" 2>/dev/null || true
+   fi
+   trap - EXIT
+   exit "${rc}"
+}
+on_signal() {
+   cleanup 143
+}
+trap cleanup EXIT
+trap on_signal INT TERM
+
+if [ -n "${from_overlay}" ]; then
+   pack_root="$(overlay_upperdir_of "${from_overlay}")"
+   if [ -z "${pack_root}" ] || [ ! -d "${pack_root}" ] ; then
+      printf '%s\n' "${me}: NOTE: '${from_overlay}' has no overlay upperdir, skipping." >&2
+      exit 0
+   fi
+elif [ -n "${from_dir}" ]; then
+   [ -d "${from_dir}" ] || error "'${from_dir}' is not a directory"
+   pack_root="${from_dir}"
+else
+   staging_dir="$(mktemp --directory)"
+   local_path=""
+   canon_path=""
+   for local_path in "${path_list[@]}" ; do
+      if [ "${local_path:0:1}" != "/" ] ; then
+         error "path must be absolute: '${local_path}'"
+      fi
+      canon_path="$(realpath --canonicalize-missing --no-symlinks -- "${local_path}")"
+      if [ "${canon_path}" = "/" ]; then
+         error "refusing to pack '/'"
+      fi
+      ## Dangling symlinks are accepted by design.
+      if [ ! -e "${canon_path}" ] && [ ! -L "${canon_path}" ]; then
+         error "path does not exist: '${canon_path}'"
+      fi
+      cp --archive --one-file-system --parents -- "${canon_path}" "${staging_dir}/"
+   done
+   pack_root="${staging_dir}"
+fi
+
+if [ -d "${output_squashfs}" ] ; then
+   error "output path is an existing directory: '${output_squashfs}'"
+fi
+safe-rm --force -- "${output_squashfs}"
+out_dir="$(dirname -- "${output_squashfs}")"
+mkdir -p -- "${out_dir}"
+
+printf '%s\n' "${me}: packing overlay squashfs -> '${output_squashfs}'" >&2
+
+## Lock down umask before creating the file, as it may contain files that are
+## not readable by standard users.
+umask 0077
+
+## Character devices are excluded so we don't pack squashfs whiteouts.
+## Calamares cannot handle them properly.
+if ! mksquashfs "${pack_root}" "${output_squashfs}" \
+   -reproducible \
+   -noappend \
+   -comp xz \
+   -no-progress \
+   -one-file-system \
+   -action 'exclude@type(c)'
+then
+   ## Drop any partial image to avoid causing Calamares problems.
+   safe-rm --force -- "${output_squashfs}"
+   if [ "${from_overlay}" = "true" ]; then
+      ## Don't crash the install by exiting 1 here
+      ##
+      ## TODO: Arguably we should crash the install here though...
+      printf '%s\n' "${me}: WARNING: mksquashfs failed" >&2
+      exit 0
+   fi
+   error "mksquashfs failed"
+fi
+
+## Re-lock the image for good measure. This is probably a no-op but can't hurt.
+chmod 0600 -- "${output_squashfs}"
+
+printf '%s\n' "${me}: done: '${output_squashfs}'" >&2

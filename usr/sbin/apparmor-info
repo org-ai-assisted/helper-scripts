@@ -3,6 +3,9 @@
 ## Copyright (C) 2020 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## style-ok: no-strict -- LC_ALL=C would break locale-specific arguments to
+## journalctl passed from the user.
+
 ## https://forums.whonix.org/t/full-system-apparmor-policy-testers-wanted/10381/22
 
 ## Not using sudo hardcoded below.
@@ -13,10 +16,6 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
-## Deliberately NO 'export LC_ALL=C': this script forwards "$@" to journalctl,
-## whose --since/--until parse month names via strptime %b (locale LC_TIME), so
-## C locale would reject a localized month (e.g. "Okt"). The grep/sed/awk below
-## match literal ASCII ("DENIED"/"ALLOWED") and need no locale forcing.
 
 if [ "$(id -u)" != "0" ]; then
    printf '%s\n' "ERROR: Must run as root." >&2
@@ -29,13 +28,6 @@ exit_code=0
 
 ## Parses AppArmor denial logs to hide unnecessary information and remove duplicates.
 
-## A clean AppArmor boot has no DENIED/ALLOWED audit records, so 'grep' matches
-## nothing and exits 1. Tolerate that no-match: without '|| true' pipefail makes
-## the pipeline fail and errexit aborts the whole script with no output (which
-## systemcheck then misreads as a journal-read failure).
-## --text: an audit record for a non-ASCII path can carry a NUL or invalid-UTF-8
-## byte; without it grep applies its binary-file heuristic, prints the match only to
-## stderr and exits 0, silently dropping a real denial. --text reports it as a line.
 output_denied="$(journalctl _TRANSPORT=audit --output cat "${@}" | { grep --text "DENIED" || true; } | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
 
 if [ ! "${output_denied}" = "" ]; then
@@ -43,7 +35,6 @@ if [ ! "${output_denied}" = "" ]; then
    printf '%s\n' "${output_denied}"
 fi
 
-## No-match tolerance and --text binary handling, as above.
 output_allowed="$(journalctl _TRANSPORT=audit --output cat "${@}" | { grep --text "ALLOWED" || true; } | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
 
 if [ ! "${output_allowed}" = "" ]; then

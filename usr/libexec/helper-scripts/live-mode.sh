@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## Copyright (C) 2012 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
 ## live_status_* variables are used, but indirectly.
@@ -57,49 +57,6 @@ if [ -z "${kernel_cmdline+x}" ]; then
   fi
 fi
 
-## Opt-in persistent live overlay (the 'Persistent' GRUB submenu boots
-## 'rd.live.overlay=LABEL=persistence:/live/overlay'). 'requested' means such an
-## entry was booted; 'active' means the overlay actually engaged on a real
-## persistence device, as opposed to dmsquash-live's SILENT amnesic RAM fallback
-## (no persistence disk, or the overlay/ovlwork dirs missing).
-##
-## The '/' overlay mount options are IDENTICAL in both cases
-## (upperdir=/run/overlayfs,workdir=/run/ovlwork,lowerdir=/run/rootfsbase), so they
-## cannot discriminate. The real signal is that dmsquash-live makes /run/overlayfs a
-## SYMLINK into the persistence device when it engages, and leaves it a plain tmpfs
-## directory on the amnesic fallback. Overridable for tests.
-##
-## Verified against the shipped trixie dracut (dracut-core 106, module 90overlayfs:
-## engaged -> 'ln -s' /run/overlayfs; no-overlay fallback -> 'mkdir' /run/overlayfs).
-## Re-verify on a dracut major bump. Scope: the ISO always boots overlayfs mode
-## (rd.live.overlay.overlayfs=1) with a DIRECTORY overlay; a device-mapper COW-image
-## overlay or the newer 'rd.overlay=' spelling are never emitted by our GRUB entries.
-##
-## Match a whole-token ' rd.live.overlay=' (space-boundary around the padded cmdline)
-## so a parameter that merely CONTAINS the string does not false-match, and the
-## amnesic base flag 'rd.live.overlay.overlayfs=1' (no '=' right after 'overlay') never
-## matches.
-live_status_persistence_requested='false'
-case " ${kernel_cmdline} " in
-  *" rd.live.overlay="*)
-    live_status_persistence_requested='true'
-    ;;
-esac
-
-if [ -z "${run_overlayfs_is_symlink+x}" ]; then
-  if [ -h /run/overlayfs ]; then
-    run_overlayfs_is_symlink='true'
-  else
-    run_overlayfs_is_symlink='false'
-  fi
-fi
-
-live_status_persistence_active='false'
-if [ "${live_status_persistence_requested}" = 'true' ] \
-  && [ "${run_overlayfs_is_symlink}" = 'true' ]; then
-  live_status_persistence_active='true'
-fi
-
 if ! [ -v writable_fs_lists_str ]; then
   writable_fs_lists_str="$(/usr/libexec/helper-scripts/get_writable_fs_lists.sh)"
 fi
@@ -119,7 +76,7 @@ else
   danger_writable_list_empty='false'
 fi
 for danger_writable_fs in "${danger_writable_fs_list[@]}"; do
-  if [ "${danger_writable_fs}" = '/' ]; then
+  if [ "${danger_writable_fs}" = '/' ] || [ "${danger_writable_fs}" = '/run/initramfs/overlayfs' ]; then
     live_state_str='persistent'
     break
   fi
@@ -230,8 +187,6 @@ if [ "${live_mode_sourced}" = 'false' ]; then
     "live_status_word_pretty"
     "live_status_detected"
     "live_status_maybe_iso_live_message"
-    "live_status_persistence_requested"
-    "live_status_persistence_active"
   )
 
   ## Print out in format suitable for 'eval' and 'grep'.
