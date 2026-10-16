@@ -43,7 +43,10 @@ dist-ai-tests:
   ## to exercise the range-expansion bug; C / C.UTF-8 / POSIX do not expand ranges
   ## and trixie-slim generates none, so without it they SKIP. Ship the
   ## pre-generated locales so they RUN.
-  apt-packages: "python3 python3-pytest python3-hypothesis python3-pyqt5 safe-rm curl ncurses-bin python3-z3 moreutils jq procps systemd bubblewrap locales-all"
+  ## squashfs-tools (mksquashfs): a hard startup 'has' dependency of
+  ## augment-squashfs-pack, which augment_squashfs_pack_test.sh drives end-to-end.
+  ## Absent, the script aborts at its dependency check before any test path runs.
+  apt-packages: "python3 python3-pytest python3-hypothesis python3-pyqt5 safe-rm curl ncurses-bin python3-z3 moreutils jq procps systemd bubblewrap locales-all squashfs-tools"
   ## The atheris coverage-guided variant is OPTIONAL: it exits 77 (skip) unless
   ## atheris is installed, and atheris is not an apt package (the real
   ## coverage-fuzzing runs in the dedicated ClusterFuzzLite lane). Authorize its
