@@ -6,7 +6,7 @@
 .SH "SYNOPSIS"
 \fBdpkg\-reconfigure\-noninteractive\fR [args\|\.\|\.\|\.]
 .SH "DESCRIPTION"
-Simple wrapper that sets environment variables for non\-interactive use, prevents daemons from restarting during reconfiguration, then forwards all arguments to \fBdpkg\-reconfigure\fR\. No debconf prompts will appear during reconfiguration\.
+Simple wrapper that sets environment variables for non\-interactive use, including \fBPOLICYRCD\fR and \fBNEEDRESTART_MODE\fR to suppress daemon restarts during reconfiguration, then forwards all arguments to \fBdpkg\-reconfigure\fR\. These variables are only set when unset or empty, so a value already present in the environment is preserved\. No debconf prompts will appear during reconfiguration\.
 .SH "EXAMPLES"
 \fBsudo dpkg\-reconfigure\-noninteractive tzdata\fR
 .P
