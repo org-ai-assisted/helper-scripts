@@ -36,6 +36,9 @@ if [ -r "${script}" ]; then
   out_env_data="$(comm -13 <(printf '%s\n' "${before}") <(printf '%s\n' "${after}"))"
 
   while read -r out_env_line; do
+    ## comm emits a leading empty line when out_env_data is empty; skip it so no
+    ## bogus `=""` is printed.
+    [ -n "${out_env_line}" ] || continue
     ## out_env_line is a shell-quoted environment variable item, word splitting
     ## expands it back into its original form safely.
     # shellcheck disable=SC2086
@@ -55,5 +58,5 @@ if [ -r "${script}" ]; then
     ## The value and only the value must be wrapped in double quotes so newlines
     ## in the value are allowed.
     printf '%s\n' "${out_env_name}=\"${out_env_val}\""
-  done
+  done <<< "${out_env_data}"
 fi
