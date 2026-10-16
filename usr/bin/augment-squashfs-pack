@@ -93,7 +93,6 @@ overlay_upperdir_of() {
 
 from_dir=""
 from_overlay=""
-force="false"
 output_squashfs="${default_output}"
 path_list=()
 
@@ -150,7 +149,7 @@ source_type_count=0
 [ "${#path_list[@]}" -gt 0 ] && source_type_count=$(( source_type_count + 1 ))
 [ -n "${from_dir}" ] && source_type_count=$(( source_type_count + 1 ))
 [ -n "${from_overlay}" ] && source_type_count=$(( source_type_count + 1 ))
-[ "${source_count}" -eq 1 ] || error "choose exactly one of: paths, --from-dir, --from-overlay (see --help)"
+[ "${source_type_count}" -eq 1 ] || error "choose exactly one of: paths, --from-dir, --from-overlay (see --help)"
 
 has mksquashfs cp safe-rm mkdir chmod realpath
 
@@ -173,6 +172,8 @@ if [ -n "${from_overlay}" ]; then
    pack_root="$(overlay_upperdir_of "${from_overlay}")"
    if [ -z "${pack_root}" ] || [ ! -d "${pack_root}" ] ; then
       printf '%s\n' "${me}: NOTE: '${from_overlay}' has no overlay upperdir, skipping." >&2
+      ## Drop any stale output from a previous run so it cannot be installed.
+      safe-rm --force -- "${output_squashfs}"
       exit 0
    fi
 elif [ -n "${from_dir}" ]; then
@@ -220,11 +221,12 @@ if ! mksquashfs "${pack_root}" "${output_squashfs}" \
    -comp xz \
    -no-progress \
    -one-file-system \
-   -action 'exclude@type(c)'
+   -action 'exclude@type(c)' \
+   -exit-on-error
 then
    ## Drop any partial image to avoid causing Calamares problems.
    safe-rm --force -- "${output_squashfs}"
-   if [ "${from_overlay}" = "true" ]; then
+   if [ -n "${from_overlay}" ]; then
       ## Don't crash the install by exiting 1 here
       ##
       ## TODO: Arguably we should crash the install here though...
