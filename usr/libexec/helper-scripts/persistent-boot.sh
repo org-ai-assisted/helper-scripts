@@ -24,6 +24,12 @@
 ## rd.*, hardening flags) while excluding grub metacharacters (; newline $ ` { }
 ## quotes space).
 persistent_boot_safe_token_re='^[A-Za-z0-9._:/=,@%!+-]+$'
+## An overlay FILESYSTEM LABEL is stricter than a general token: it is spliced as
+## rd.live.overlay=LABEL=<label>:/live/overlay, and dracut's dmsquash-live-root
+## takes devspec=${overlay%%:*} -- so a ':' in the label would TRUNCATE the parse
+## (LABEL=persist:evil mounts label "persist"). ':' (and '/','=',',' etc.) are
+## never valid IN a label here, so the label charset excludes them.
+persistent_boot_label_re='^[A-Za-z0-9._-]+$'
 persistent_boot_uuid_re='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
 
 ## Build the persistent-boot kernel cmdline from the REALIZED cmdline: drop the
@@ -41,8 +47,11 @@ persistent_boot_cmdline() {
    local IFS=$' \t\n'
    overlay_label="${1}"
    luks_uuid="${2:-}"
-   if ! [[ "${overlay_label}" =~ ${persistent_boot_safe_token_re} ]]; then
-      printf '%s\n' "persistent-boot: refusing unsafe overlay label '${overlay_label}'." >&2
+   if ! [[ "${overlay_label}" =~ ${persistent_boot_label_re} ]]; then
+      ## The label FAILED validation, so it may carry a newline/ESC; strip every
+      ## non-printable to '?' before logging so it cannot forge a log line or emit
+      ## a terminal control sequence.
+      printf '%s\n' "persistent-boot: refusing unsafe overlay label '${overlay_label//[![:print:]]/?}'." >&2
       return 1
    fi
    if [ -n "${luks_uuid}" ] && ! [[ "${luks_uuid}" =~ ${persistent_boot_uuid_re} ]]; then
@@ -225,6 +234,13 @@ persistent_boot_prune() {
    if [ -z "${boot_dir}" ] || [ -z "${src_dir}" ]; then
       return 0
    fi
+   ## Self-guard a symlinked boot_dir (same as write_grub_cfg): both current callers
+   ## route through persistent_boot_safe_boot_dir first, but a future caller passing
+   ## a raw 'boot -> /' would otherwise glob+safe-rm the host's /vmlinuz-*.
+   if [ -L "${boot_dir}" ]; then
+      printf '%s\n' "persistent-boot: refusing to prune a symlinked boot dir." >&2
+      return 0
+   fi
    for vmlinuz in "${boot_dir}"/vmlinuz-*; do
       if [ ! -e "${vmlinuz}" ]; then
          continue
@@ -249,6 +265,14 @@ persistent_boot_write_grub_cfg() {
    boot_dir="${1}"
    cmdline="${2}"
    if [ -z "${boot_dir}" ] || [ -L "${boot_dir}" ]; then
+      return 1
+   fi
+   ## Defense-in-depth at the grub.cfg SINK: persistent_boot_cmdline only emits
+   ## space-joined safe tokens, but as a reusable writer this must never splice a
+   ## newline (a grub command separator) or other non-print/non-space char into a
+   ## 'linux' line. Space is legitimate (it joins tokens); reject anything else.
+   if [ -n "${cmdline}" ] && [[ "${cmdline}" == *[![:print:]]* ]]; then
+      printf '%s\n' "persistent-boot: refusing a cmdline with a control character." >&2
       return 1
    fi
    cfg="${boot_dir}/grub/grub.cfg"
