@@ -23,27 +23,31 @@ true "${BASH_SOURCE[0]}: START"
 
 true "${BASH_SOURCE[0]}: INFO: FLOCKER: ${FLOCKER-}"
 
-## No fallback outside of /run/user/EUID by design. A fallback such as /tmp or
-## a 1777 root:root dir under /run would introduce TOCTOU issues.
+## No fallback outside of /run/user/$EUID by design. A fallback such as /tmp or
+## a 1777 root:root dir under /run would introduce TOCTOU issues. A fallback to
+## ${HOME}/.cache would allow multiple instances of the script to run at once
+## if one instance is launched before login and another one after. Callers who
+## launch locking scripts before user login must create a /run/user/$EUID
+## directory with the proper ownership themselves.
 flocker_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${EUID}}"
-if [ -d "${flocker_runtime_dir}" ] && [ ! -L "${flocker_runtime_dir}" ]; then
+if [ -d "${flocker_runtime_dir}" ] && [ ! -L "${flocker_runtime_dir}" ] && [ -O "${flocker_runtime_dir}" ]; then
   flocker_temp_folder="${flocker_runtime_dir}/flocker-temp-folder"
 else
-  printf '%s\n' "$0: ERROR: no per-user runtime dir, cannot create a lock directory!" 1>&2
+  printf '%s\n' "$0: ERROR: no per-user runtime dir with proper ownership, cannot create a lock directory!" 1>&2
   exit 1
 fi
 mkdir --parents -- "${flocker_temp_folder}"
-if [ -L "${flocker_temp_folder}" ]; then
-  printf '%s\n' "$0: ERROR: refusing unexpected symlink at lock directory location '${flocker_temp_folder}'!" 1>&2
+if [ -L "${flocker_temp_folder}" ] || [ ! -O "${flocker_temp_folder}" ]; then
+  printf '%s\n' "$0: ERROR: refusing unexpected symlink or non-owned directory at lock directory location '${flocker_temp_folder}'!" 1>&2
   exit 1
 fi
 
-## Wrap-mode setup: an EXECUTED run with arguments treats $1 as the lock key and
-## runs the rest as a command under that key's lock (the run happens on the
-## locked pass, below). A SOURCED use (BASH_SOURCE != $0) or an executed no-arg
-## dev run leaves this off, keeping the self-lock behaviour below.
+## If lockfile.sh is called with arguments, and LOCK_NAME is not set, $1 is
+## used as the name of the lock file, and remaining arguments are the command
+## to run. LOCK_NAME exists so that lockfile.sh can be inlined into
+## dist-installer-cli without causing $1 to be interpreted as a lockfile.
 lockfile_wrap="no"
-if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ "${#}" -ge 1 ]; then
+if [ "${BASH_SOURCE[0]}" = "${0}" ] && [ -z "${LOCK_NAME-}" ] && [ "${#}" -ge 1 ]; then
   lockfile_wrap="yes"
   LOCK_NAME="${1}"
 fi
@@ -69,12 +73,10 @@ fi
 if [ "${FLOCKER-}" != "${0}" ]; then
   true "${BASH_SOURCE[0]}: INFO: FLOCKER set to self: no"
 
-  ## Using 'flock' with option '--verbose' but hiding stdout for the purpose of showing
-  ## 'flock: failed to get lock' error message, if applicable.
-  ## The error message is not perfectly atomic.
-  flock --verbose --exclusive --nonblock "${flocker_lockfile}" /usr/bin/true >/dev/null
-  ## But if we were to use '--verbose' below, then 'flock' would always add verbose
-  ## output even in case it was possible to acquire a lock.
+  if ! flock --exclusive --nonblock "${flocker_lockfile}" /usr/bin/true 2>/dev/null; then
+    printf '%s\n' "${0}: another instance is already running; exiting." 1>&2
+    exit 75
+  fi
 
   if test -o xtrace; then
     ## Code duplication. Also in xtrace.bsh function shellopts_with_xtrace.
@@ -88,16 +90,16 @@ if [ "${FLOCKER-}" != "${0}" ]; then
         flocker_shellopts="${SHELLOPTS-}:xtrace"
         ;;
     esac
-    exec env SHELLOPTS="${flocker_shellopts}" FLOCKER="${0}" flock --exclusive --nonblock "${flocker_lockfile}" "${0}" "${@}"
+    exec env SHELLOPTS="${flocker_shellopts}" FLOCKER="${0}" flock --conflict-exit-code 75 --close --exclusive --nonblock "${flocker_lockfile}" "${0}" "${@}"
   else
-    exec env FLOCKER="${0}" flock --exclusive --nonblock "${flocker_lockfile}" "${0}" "${@}"
+    exec env FLOCKER="${0}" flock --conflict-exit-code 75 --close --exclusive --nonblock "${flocker_lockfile}" "${0}" "${@}"
   fi
   ## Never reached due to 'exec' above.
 fi
 
-## If we get this far, we're in wrap mode. The above code will have re-executed
-## this script with the lock held, so now we just need to hand off to the
-## target command.
+## If we get this far and lockfile_wrap is set to 'yes', we're in wrap mode.
+## The above code will have re-executed this script with the lock held, so now
+## we just need to hand off to the target command.
 if [ "${lockfile_wrap}" = "yes" ]; then
   shift # Get rid of the lock key name
   if [ "${#}" -ge 1 ] && [ "${1}" = "--" ]; then
@@ -110,6 +112,9 @@ if [ "${lockfile_wrap}" = "yes" ]; then
   unset LOCK_NAME FLOCKER
   exec -- "${@}"
 fi
+
+## FLOCKER is set and lockfile_wrap is not set to 'yes', therefore we've
+## successfully locked already and can allow the sourcing script to run.
 
 true "${BASH_SOURCE[0]}: INFO: FLOCKER set to self: yes"
 

@@ -3,6 +3,9 @@
 ## Copyright (C) 2020 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## style-ok: no-strict -- LC_ALL=C would break locale-specific arguments to
+## journalctl passed from the user.
+
 ## https://forums.whonix.org/t/full-system-apparmor-policy-testers-wanted/10381/22
 
 ## Not using sudo hardcoded below.
@@ -25,14 +28,14 @@ exit_code=0
 
 ## Parses AppArmor denial logs to hide unnecessary information and remove duplicates.
 
-output_denied="$(journalctl _TRANSPORT=audit --output cat "${@}" | grep "DENIED" | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
+output_denied="$(journalctl _TRANSPORT=audit --output cat "${@}" | { grep --text "DENIED" || true; } | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
 
 if [ ! "${output_denied}" = "" ]; then
    exit_code=1
    printf '%s\n' "${output_denied}"
 fi
 
-output_allowed="$(journalctl _TRANSPORT=audit --output cat "${@}" | grep "ALLOWED" | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
+output_allowed="$(journalctl _TRANSPORT=audit --output cat "${@}" | { grep --text "ALLOWED" || true; } | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
 
 if [ ! "${output_allowed}" = "" ]; then
    exit_code=1
