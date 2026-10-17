@@ -181,6 +181,39 @@ persistent_boot_device() {
    fi
 }
 
+## Resolve and create the writable boot dir '<mount_dir>/boot' on the just-mounted,
+## UNENCRYPTED persistbootx fs, refusing a planted 'boot' symlink COMPONENT. That fs
+## is offline-attacker-writable, so a 'boot -> /etc' (or any abs path) symlink would
+## make 'mkdir --parents' succeed on the link and every later write (cp, mv,
+## grub.cfg) resolve THROUGH it onto the live root fs -- a root arbitrary-write at
+## kernel-upgrade time. The leaf --remove-destination/--no-target-directory guards
+## do not reach an intermediate component, and write_grub_cfg's own -L check fires
+## only AFTER the kernel/initrd copies already escaped; this is the single chokepoint
+## both callers (hook maintenance + persistence-setup seed) share. Prints the created
+## boot dir on success. Returns 1 on an empty mount_dir, a symlink 'boot', or a
+## 'boot' that exists and is not a directory.
+persistent_boot_safe_boot_dir() {
+   local mount_dir boot_dir
+   mount_dir="${1}"
+   if [ -z "${mount_dir}" ]; then
+      printf '%s\n' "persistent-boot: empty mount dir; refusing." >&2
+      return 1
+   fi
+   boot_dir="${mount_dir}/boot"
+   ## -L first: it does NOT follow the link, so a 'boot -> /etc' is caught before
+   ## the -e/-d tests (which WOULD follow it and see a legitimate directory).
+   if [ -L "${boot_dir}" ]; then
+      printf '%s\n' "persistent-boot: refusing a planted 'boot' symlink at '${boot_dir}'." >&2
+      return 1
+   fi
+   if [ -e "${boot_dir}" ] && [ ! -d "${boot_dir}" ]; then
+      printf '%s\n' "persistent-boot: '${boot_dir}' exists and is not a directory; refusing." >&2
+      return 1
+   fi
+   mkdir --parents -- "${boot_dir}" || return 1
+   printf '%s\n' "${boot_dir}"
+}
+
 ## Remove boot-area kernel pairs whose kernel is no longer installed in <src_dir>
 ## (normally /boot), so the small persistbootx partition does not fill up over
 ## successive upgrades. Best-effort. Args: boot_dir src_dir. Refuses an empty
