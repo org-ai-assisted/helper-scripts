@@ -30,6 +30,13 @@ true "${BASH_SOURCE[0]}: INFO: FLOCKER: ${FLOCKER-}"
 ## launch locking scripts before user login must create a /run/user/$EUID
 ## directory with the proper ownership themselves.
 flocker_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${EUID}}"
+if ! [ -e "${flocker_runtime_dir}" ] && [ "${flocker_runtime_dir}" = '/run/user/0' ]; then
+  ## Root should have this directory if it doesn't exist yet.
+  if ! mkdir --parents -- "${flocker_runtime_dir}"; then
+    printf '%s\n' "$0: ERROR: Could not create flocker runtime dir at '${flocker_runtime_dir}'!"
+    exit 1
+  fi
+fi
 if [ -d "${flocker_runtime_dir}" ] && [ ! -L "${flocker_runtime_dir}" ] && [ -O "${flocker_runtime_dir}" ]; then
   flocker_temp_folder="${flocker_runtime_dir}/flocker-temp-folder"
 else
