@@ -3,12 +3,6 @@
 ## Copyright (C) 2020 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## style-ok: no-strict -- 'export LC_ALL=C' must NOT be set: journalctl parses
-## locale-specific --since/--until arguments (syslog-style dates use strptime
-## '%b', which follows LC_TIME), so forcing C breaks a non-English user's month
-## names. Strict-mode therefore lives in main() (this file is also source-able:
-## a unit test sources it to drive apparmor_info_filter directly).
-
 ## https://forums.whonix.org/t/full-system-apparmor-policy-testers-wanted/10381/22
 
 ## Not using sudo hardcoded below.
@@ -49,6 +43,10 @@ main() {
    set -o errtrace
    shopt -s inherit_errexit
    shopt -s shift_verbose
+   ## Localization is not supported; C gives deterministic parsing for the text
+   ## pipeline. (journalctl then also parses --since/--until under C, i.e. English
+   ## month names only -- accepted, since locale-specific args are unsupported.)
+   export LC_ALL=C
 
    if [ "$(id -u)" != "0" ]; then
       printf '%s\n' "ERROR: Must run as root." >&2
