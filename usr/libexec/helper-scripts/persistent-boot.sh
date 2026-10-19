@@ -291,16 +291,18 @@ persistent_boot_write_grub_cfg() {
       fi
       versions+=( "${ver}" )
    done
+   ## A symlinked grub dir would let a write -- OR the stale-cfg removal below --
+   ## escape the boot area: safe-rm resolves the symlink and deletes grub.cfg in
+   ## the target dir. Refuse it BEFORE touching anything under it.
+   if [ -L "${boot_dir}/grub" ]; then
+      printf '%s\n' "persistent-boot: refusing a symlinked grub directory." >&2
+      return 1
+   fi
    if [ "${#versions[@]}" -eq 0 ]; then
       ## No bootable pair: REMOVE any stale grub.cfg so the ISO grub's
       ## '[ -f grub.cfg ]' check fails and it falls through to amnesic live,
       ## rather than configfile-ing a menu that points at an absent kernel.
       safe-rm --force -- "${cfg}" 2>/dev/null || true
-      return 1
-   fi
-   ## A symlinked grub dir would let the write escape the boot area; refuse it.
-   if [ -L "${boot_dir}/grub" ]; then
-      printf '%s\n' "persistent-boot: refusing a symlinked grub directory." >&2
       return 1
    fi
    sorted="$(printf '%s\n' "${versions[@]}" | sort --version-sort --reverse)"

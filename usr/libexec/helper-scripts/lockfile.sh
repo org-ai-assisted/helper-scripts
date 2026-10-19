@@ -31,8 +31,11 @@ true "${BASH_SOURCE[0]}: INFO: FLOCKER: ${FLOCKER-}"
 ## directory with the proper ownership themselves.
 flocker_runtime_dir="${XDG_RUNTIME_DIR:-/run/user/${EUID}}"
 if ! [ -e "${flocker_runtime_dir}" ] && [ "${flocker_runtime_dir}" = '/run/user/0' ]; then
-  ## Root should have this directory if it doesn't exist yet.
-  if ! mkdir --parents -- "${flocker_runtime_dir}"; then
+  ## Root should have this directory if it doesn't exist yet. Mode 0700 per the
+  ## XDG runtime-dir contract (owner-only): --mode sets it regardless of umask,
+  ## so a lax caller umask cannot leave it world-traversable.
+  # shellcheck disable=SC2174  # /run/user exists, so /run/user/0 is the only (deepest) dir created; --mode applies to it
+  if ! mkdir --parents --mode=0700 -- "${flocker_runtime_dir}"; then
     printf '%s\n' "$0: ERROR: Could not create flocker runtime dir at '${flocker_runtime_dir}'!"
     exit 1
   fi
