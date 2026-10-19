@@ -3,6 +3,12 @@
 ## Copyright (C) 2020 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## style-ok: no-strict -- 'export LC_ALL=C' must NOT be set: journalctl parses
+## locale-specific --since/--until arguments (syslog-style dates use strptime
+## '%b', which follows LC_TIME), so forcing C breaks a non-English user's month
+## names. Strict-mode therefore lives in main() (this file is also source-able:
+## a unit test sources it to drive apparmor_info_filter directly).
+
 ## https://forums.whonix.org/t/full-system-apparmor-policy-testers-wanted/10381/22
 
 ## Not using sudo hardcoded below.
@@ -17,30 +23,23 @@ if ! declare -F was_executed >/dev/null; then
 fi
 
 ## Redact and deduplicate the AppArmor audit records that mention $1 (DENIED or
-## ALLOWED). Reads raw 'journalctl --output cat' text on stdin; prints the
+## ALLOWED). Reads raw 'journalctl --output cat' text on stdin; writes the
 ## matching records with volatile fields (pid=..., fsuid=...) stripped and exact
-## duplicates removed. Pure: carries no strict-mode and uses 'return', so a unit
-## test can source this file and call it. Done as discrete steps -- each in its
-## own variable -- rather than one long pipe, so no stage's failure is hidden.
+## duplicates removed. STREAMING by design -- the records are NOT buffered into a
+## shell variable: a flood of repeated denials stays bounded (awk holds only the
+## distinct lines), and a NUL byte inside a record survives (bash drops NULs from
+## a command substitution, which would silently merge distinct records and hide a
+## denial). Pure: carries no strict-mode, so a unit test can source this file and
+## call it. '--text' keeps a NUL from flipping grep to binary mode (match to
+## stderr only, denial dropped); '-e' passes the keyword as a pattern so a leading
+## '-' can never be read as an option; 'grep ... || true' because no match (a
+## clean boot) is exit 1, not an error.
 apparmor_info_filter() {
-   local keyword matched redacted
+   local keyword
    keyword="$1"
-
-   ## Keep only the records naming the keyword. grep exits 1 when nothing matches
-   ## -- the clean-boot case, not an error: empty result, success. '--text' keeps
-   ## a NUL elsewhere in the journal from flipping grep to binary mode (which
-   ## prints the match to stderr only and drops the denial). '-e' passes the
-   ## keyword as a pattern, so a leading '-' could never be read as an option.
-   matched="$(grep --text -e "${keyword}")" || true
-   if [ -z "${matched}" ]; then
-      return 0
-   fi
-
-   ## Strip the volatile 'pid=...' (up to 'comm') and everything from 'fsuid=' on.
-   redacted="$(sed -e 's/pid=.* comm/comm/g' -e 's/ fsuid.*//g' <<< "${matched}")"
-
-   ## Drop records that are identical after redaction.
-   awk '!x[$0]++' <<< "${redacted}"
+   { grep --text -e "${keyword}" || true; } \
+      | sed -e 's/pid=.* comm/comm/g' -e 's/ fsuid.*//g' \
+      | awk '!x[$0]++'
 }
 
 main() {
@@ -50,7 +49,6 @@ main() {
    set -o errtrace
    shopt -s inherit_errexit
    shopt -s shift_verbose
-   export LC_ALL=C
 
    if [ "$(id -u)" != "0" ]; then
       printf '%s\n' "ERROR: Must run as root." >&2
