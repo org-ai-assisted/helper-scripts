@@ -46,7 +46,13 @@ dist-ai-tests:
   ## squashfs-tools (mksquashfs): a hard startup 'has' dependency of
   ## augment-squashfs-pack, which augment_squashfs_pack_test.sh drives end-to-end.
   ## Absent, the script aborts at its dependency check before any test path runs.
-  apt-packages: "python3 python3-pytest python3-hypothesis python3-pyqt5 safe-rm curl ncurses-bin python3-z3 moreutils jq procps systemd bubblewrap locales-all squashfs-tools"
+  ## libpwquality-tools (pwscore) + cracklib-runtime: password_strength.sh gates a
+  ## passphrase through pwscore, which password_strength_test.sh requires. pwscore
+  ## only scores with the cracklib dictionary (/var/cache/cracklib/cracklib_dict.*),
+  ## built by cracklib-runtime -- which libpwquality-tools merely Recommends, so
+  ## --no-install-recommends drops it and pwscore errors ("error loading
+  ## dictionary"). Both are needed for the test to run instead of fail loud.
+  apt-packages: "python3 python3-pytest python3-hypothesis python3-pyqt5 safe-rm curl ncurses-bin python3-z3 moreutils jq procps systemd bubblewrap locales-all squashfs-tools libpwquality-tools cracklib-runtime"
   ## The atheris coverage-guided variant is OPTIONAL: it exits 77 (skip) unless
   ## atheris is installed, and atheris is not an apt package (the real
   ## coverage-fuzzing runs in the dedicated ClusterFuzzLite lane). Authorize its
