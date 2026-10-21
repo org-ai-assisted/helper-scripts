@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
@@ -10,7 +10,11 @@
 
 ## provides was_executed
 # shellcheck source=./check_runtime.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
 
 if was_executed "${BASH_SOURCE[0]}"; then
    set -o errexit
@@ -20,6 +24,15 @@ if was_executed "${BASH_SOURCE[0]}"; then
    shopt -s inherit_errexit
    shopt -s shift_verbose
    export LC_ALL=C
+
+   ## Prevents exit_handler from misbehaving if exit_code is inherited from the
+   ## caller.
+   exit_code=""
+
+   ## Traps have to be set here so that exit codes are correct in the event of
+   ## a source failure.
+   trap "error_handler" ERR
+   trap "exit_handler" EXIT
 fi
 
 output_cmd() {
@@ -28,13 +41,13 @@ output_cmd() {
 }
 
 error_handler() {
-   exit_code="$?"
+   local raw_exit_code="$?"
    printf '%s\n' "\
 BASH_COMMAND: ${BASH_COMMAND}
-exit_code: ${exit_code}"
+raw_exit_code: ${raw_exit_code}"
+   ## This script's exit code must be 1 to indicate an unexpected failure.
+   exit_code=1
 }
-
-trap "error_handler" ERR
 
 exit_handler() {
    if [ "${exit_code:-}" = "" ]; then
@@ -53,8 +66,6 @@ exit_handler() {
    output_cmd "### END: ### Exiting with exit_code '${exit_code}' indicating '${meaning}'."
    exit "${exit_code}"
 }
-
-trap "exit_handler" EXIT
 
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/tor_enabled_check
 
@@ -550,7 +561,6 @@ te_pe_tb_check() {
    exit "${exit_code}"
 }
 
-## Only auto-run when executed, not when sourced (unit tests source it).
 if was_executed "${BASH_SOURCE[0]}"; then
    te_pe_tb_check "$@"
 fi

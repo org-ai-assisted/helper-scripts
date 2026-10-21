@@ -7,36 +7,80 @@
 
 ## Not using sudo hardcoded below.
 ## https://forums.whonix.org/t/full-system-apparmor-policy-testers-wanted/10381/29
-set -o errexit
-set -o nounset
-set -o pipefail
-set -o errtrace
-shopt -s inherit_errexit
-shopt -s shift_verbose
 
-if [ "$(id -u)" != "0" ]; then
-   printf '%s\n' "ERROR: Must run as root." >&2
-   printf '%s\n' "sudo $0" >&2
-   exit 112
+## provides was_executed
+# shellcheck source=../libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
 fi
 
-## Default.
-exit_code=0
+## Redact and deduplicate the AppArmor audit records that mention $1 (DENIED or
+## ALLOWED). Reads raw 'journalctl --output cat' text on stdin; writes the
+## matching records with volatile fields (pid=..., fsuid=...) stripped and exact
+## duplicates removed. STREAMING by design -- the records are NOT buffered into a
+## shell variable: a flood of repeated denials stays bounded (awk holds only the
+## distinct lines), and a NUL byte inside a record survives (bash drops NULs from
+## a command substitution, which would silently merge distinct records and hide a
+## denial). Pure: carries no strict-mode, so a unit test can source this file and
+## call it. '--text' keeps a NUL from flipping grep to binary mode (match to
+## stderr only, denial dropped); '-e' passes the keyword as a pattern so a leading
+## '-' can never be read as an option; 'grep ... || true' because no match (a
+## clean boot) is exit 1, not an error.
+apparmor_info_filter() {
+   local keyword
+   keyword="$1"
+   { grep --text -e "${keyword}" || true; } \
+      | sed -e 's/pid=.* comm/comm/g' -e 's/ fsuid.*//g' \
+      | awk '!x[$0]++'
+}
 
-## Parses AppArmor denial logs to hide unnecessary information and remove duplicates.
+main() {
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   ## Localization is not supported; C gives deterministic parsing for the text
+   ## pipeline. (journalctl then also parses --since/--until under C, i.e. English
+   ## month names only -- accepted, since locale-specific args are unsupported.)
+   export LC_ALL=C
 
-output_denied="$(journalctl _TRANSPORT=audit --output cat "${@}" | grep "DENIED" | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
+   if [ "$(id -u)" != "0" ]; then
+      printf '%s\n' "ERROR: Must run as root." >&2
+      printf '%s\n' "sudo $0" >&2
+      exit 112
+   fi
 
-if [ ! "${output_denied}" = "" ]; then
-   exit_code=1
-   printf '%s\n' "${output_denied}"
+   ## Default.
+   exit_code=0
+
+   ## The journalctl binary. Overridable so a test can point the privileged audit
+   ## read at a stub without shadowing it on PATH; defaults to the real tool.
+   journalctl_cmd="${APPARMOR_INFO_JOURNALCTL:-journalctl}"
+
+   ## Parses AppArmor denial logs to hide unnecessary information and remove duplicates.
+
+   output_denied="$("${journalctl_cmd}" _TRANSPORT=audit --output cat "${@}" | apparmor_info_filter DENIED)"
+
+   if [ -n "${output_denied}" ]; then
+      exit_code=1
+      printf '%s\n' "${output_denied}"
+   fi
+
+   output_allowed="$("${journalctl_cmd}" _TRANSPORT=audit --output cat "${@}" | apparmor_info_filter ALLOWED)"
+
+   if [ -n "${output_allowed}" ]; then
+      exit_code=1
+      printf '%s\n' "${output_allowed}"
+   fi
+
+   exit "${exit_code}"
+}
+
+## Only auto-run when executed, not when sourced (unit tests source it).
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
 fi
-
-output_allowed="$(journalctl _TRANSPORT=audit --output cat "${@}" | grep "ALLOWED" | sed -e 's/pid=.* comm/comm/g' | sed -e 's/ fsuid.*//g' | awk '!x[$0]++')"
-
-if [ ! "${output_allowed}" = "" ]; then
-   exit_code=1
-   printf '%s\n' "${output_allowed}"
-fi
-
-exit "${exit_code}"

@@ -9,12 +9,30 @@ set -o errtrace
 set -o pipefail
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=../libexec/helper-scripts/get_colors.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_colors.sh
 ## Provides get_password, which sets the 'password' variable read below.
 # shellcheck source=../libexec/helper-scripts/get_password.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_password.sh
+# shellcheck source=../libexec/helper-scripts/password_strength.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/password_strength.sh
+
+allow_weak_passphrase='false'
+
+while [ "$#" -gt 0 ]; do
+   case "$1" in
+      --allow-weak-passphrase)
+         allow_weak_passphrase='true'
+         ;;
+      *)
+         printf '%s\n' "${0}: ERROR: Invalid option: '$1'" >&2
+         exit 2
+         ;;
+   esac
+   shift
+done
 
 run_update_grub() {
    printf "%s\n" "$0: INFO: Running 'update-grub'..." >&2
@@ -96,7 +114,15 @@ if [ "${first_input}" = "" ]; then
    exit 0
 fi
 
-password_hash="$(LC_ALL=C grub-mkpasswd-pbkdf2 <<< "${password}"$'\n'"${password}" | awk '/hash of / {print $NF}')"
+## Reject a weak password unless the operator overrode the strength gate.
+if [ "${allow_weak_passphrase}" = 'false' ]; then
+   if ! printf '%s' "${password}" | password_strength_check "${user}"; then
+      printf "%s\n" "${0}: ERROR: New password is too weak (the maximum strength score is required). Re-run with --allow-weak-passphrase to override. No changes made." >&2
+      exit 1
+   fi
+fi
+
+password_hash="$(grub-mkpasswd-pbkdf2 <<< "${password}"$'\n'"${password}" | awk '/hash of / {print $NF}')"
 
 ## Change the password.
 printf "%s\n" "\

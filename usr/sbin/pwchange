@@ -1,74 +1,102 @@
 #!/bin/bash
 
-## Copyright (C) 2019 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## Copyright (C) 2019 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
 set -o errexit
 set -o nounset
-set -o errtrace
 set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=../libexec/helper-scripts/get_colors.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_colors.sh
 # shellcheck source=../libexec/helper-scripts/get_password.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_password.sh
+# shellcheck source=../libexec/helper-scripts/password_strength.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/password_strength.sh
+
+allow_weak_passphrase='false'
+
+while [ "$#" -gt 0 ]; do
+   case "$1" in
+      --allow-weak-passphrase)
+         allow_weak_passphrase='true'
+         ;;
+      *)
+         printf '%s\n' "${0}: ERROR: Invalid option: '$1'" >&2
+         exit 2
+         ;;
+   esac
+   shift
+done
 
 if [ "$(id -u)" != "0" ]; then
-   printf "%s\n" "$0: ERROR: This must be run as root (sudo)!" >&2
+   printf '%s\n' "${0}: ERROR: This must be run as root (sudo)!" >&2
    exit 1
 fi
 
 if ! user_list_str="$(/usr/libexec/helper-scripts/get-user-list)"; then
-    printf "%s\n" "$0: ERROR: Failed to get user list!" >&2
-    exit 1
+   printf '%s\n' "${0}: ERROR: Failed to get user list!" >&2
+   exit 1
 fi
-readarray -t user_list <<< "$user_list_str"
+readarray -t user_list <<< "${user_list_str}"
 
-printf "%s\n" "Users present on the system:" >&2
+printf '%s\n' "Users present on the system:" >&2
 for user_entry in "${user_list[@]}"; do
-   printf "%s\n" "   ${user_entry}" >&2
+   printf '%s\n' "   ${user_entry}" >&2
 done
 
 read -r -p "Enter the username whose password you want to change: " user
 
-if [ "$user" = "" ]; then
-   printf "%s\n" "$0: ERROR: No username provided. Please specify a username." >&2
+if [ "${user}" = "" ]; then
+   printf '%s\n' "${0}: ERROR: No username provided. Please specify a username." >&2
    exit 1
 fi
 
-if ! id "$user" &>/dev/null ; then
-   printf "%s\n" "$0: ERROR: Account '$user' does not exist. Please check the username and try again." >&2
+if ! id "${user}" &>/dev/null ; then
+   printf '%s\n' "${0}: ERROR: Account '${user}' does not exist. Please check the username and try again." >&2
    exit 1
 fi
 
-printf "%s\n" "Enter the new password for account '$user':" >&2
-## Sets variable `password`.
+printf '%s\n' "Enter the new password for account '${user}':" >&2
+## Sets variable 'password'.
 get_password
-first_input="$password"
-echo >&2
+first_input="${password}"
+printf '%s\n' "" >&2
 
-printf "%s\n" "Re-enter the new password to confirm:" >&2
-## Sets variable `password`.
+printf '%s\n' "Re-enter the new password to confirm:" >&2
+## Sets variable 'password'.
 get_password
-second_input="$password"
-echo >&2
+second_input="${password}"
+printf '%s\n' "" >&2
 
-if [ ! "$first_input" = "$second_input" ]; then
-   printf "%s\n" "ERROR: Passwords do not match. Password has not been changed." >&2
+if [ ! "${first_input}" = "${second_input}" ]; then
+   printf '%s\n' "ERROR: Passwords do not match. Password has not been changed." >&2
    exit 1
 fi
 
 ## Delete password if the provided new password is blank.
-if [ "$first_input" = "" ]; then
-   read -r -p "WARNING: You are about to delete the password for account '$user'. Continue? [Y/N] " delete_pw_yn
+if [ "${first_input}" = "" ]; then
+   read -r -p "WARNING: You are about to delete the password for account '${user}'. Continue? [Y/N] " delete_pw_yn
 
    if [ "${delete_pw_yn,,}" = 'y' ]; then
-      passwd -d "$user"
-      printf "%s\n" "$0: SUCCESS: Password for account '$user' has been deleted successfully." >&2
+      passwd -d "${user}"
+      printf '%s\n' "${0}: SUCCESS: Password for account '${user}' has been deleted successfully." >&2
    else
-      printf "%s\n" "$0: CANCELLED deleting password for account '$user'." >&2
+      printf '%s\n' "${0}: CANCELLED deleting password for account '${user}'." >&2
    fi
    exit 0
+fi
+
+## Reject a weak password unless the operator overrode the strength gate.
+if [ "${allow_weak_passphrase}" = 'false' ]; then
+   if ! printf '%s' "${password}" | password_strength_check "${user}"; then
+      printf '%s\n' "${0}: ERROR: New password is too weak (the maximum strength score is required). Re-run with --allow-weak-passphrase to override. Password has not been changed." >&2
+      exit 1
+   fi
 fi
 
 ## Change the password otherwise.
@@ -78,16 +106,16 @@ unset first_input
 unset second_input
 unset password
 
-printf "%s\n" "$0: SUCCESS: Password for account '$user' has been updated successfully." >&2
+printf '%s\n' "${0}: SUCCESS: Password for account '${user}' has been updated successfully." >&2
 
 if [ -f '/usr/share/qubes/marker-vm' ]; then
-   true "$0: INFO: GUI autologin is not applicable to Qubes OS."
+   true "${0}: INFO: GUI autologin is not applicable to Qubes OS."
    exit 0
 fi
 
-if /usr/sbin/autologinchange -c "$user"; then
-   printf "%s\n" "${yellow}WARNING:${nocolor} Account '$user' has autologin enabled." >&2
-   printf "%s\n" "Passwordless access to this account is likely still possible." >&2
-   printf "%s\n" "You can use the 'autologinchange' utility to change this." >&2
-   printf "%s\n" "See https://www.kicksecure.com/wiki/Login for more information." >&2
+if /usr/sbin/autologinchange -c "${user}"; then
+   printf '%s\n' "${yellow}WARNING:${nocolor} Account '${user}' has autologin enabled." >&2
+   printf '%s\n' "Passwordless access to this account is likely still possible." >&2
+   printf '%s\n' "You can use the 'autologinchange' utility to change this." >&2
+   printf '%s\n' "See https://www.kicksecure.com/wiki/Login for more information." >&2
 fi
