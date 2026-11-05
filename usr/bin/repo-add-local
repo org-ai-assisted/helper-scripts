@@ -3,7 +3,8 @@
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## Enable a derivative LOCAL apt repository on THIS system, then apt-get update.
+## Enable a derivative LOCAL apt repository on THIS system (write its deb822 sources
+## stanza). It does NOT run apt-get update -- that is the caller's next step.
 ## The local repo is derivative-maker's reprepro 'local' repo (codename 'local'),
 ## built from source and delivered here by one of:
 ##   - a VirtualBox shared folder mounted at /mnt/shared (host-injected from the
@@ -105,6 +106,4 @@ local_apt_repo_sources_stanza "file:${repo_dir}" "${codename}" > "${list_file}"
 printf '%s\n' "${me}: wrote ${list_file}:"
 cat -- "${list_file}"
 
-## style-ok: allow-apt-get -- plain 'update' only, no package action
-apt-get update
-printf '%s\n' "${me}: ready -- e.g. apt-get install --only-upgrade <pkg>"
+printf '%s\n' "${me}: enabled. Next: apt-get update && apt-get install --only-upgrade <pkg>"
