@@ -91,6 +91,11 @@ else
          || die "${guest_mount} still not mounted -- is the 'shared' folder attached? (host: dm-shared-apt-repo attach <vm>)"
    fi
    repo_dir="${guest_mount}/aptrepo_local/${derivative}"
+   ## apt over this read-only vboxsf mount: the _apt sandbox user cannot read it
+   ## (vboxsf perms come from the mount options, umask 0007, not the inode mode -- a
+   ## chmod/ACL in the guest is a no-op), so a later 'apt-get update' prints a benign
+   ## "Err: ... Permission denied" + "Download is performed unsandboxed as root" and
+   ## retries as root, which succeeds via [trusted=yes]. Expected; accepted as-is.
 fi
 
 [ -d "${repo_dir}/dists/${codename}" ] \
