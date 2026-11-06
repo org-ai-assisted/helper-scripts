@@ -3,8 +3,13 @@
 ## Copyright (C) 2019 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## provides was_executed
 # shellcheck source=../libexec/helper-scripts/check_runtime.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+  exit 1
+fi
 
 if was_executed "${BASH_SOURCE[0]}"; then
   shim_signed_mok_setup_sourced='false'
@@ -19,6 +24,7 @@ if [ "${shim_signed_mok_setup_sourced}" = 'false' ]; then
   set -o pipefail
   shopt -s inherit_errexit
   shopt -s shift_verbose
+  export LC_ALL=C
 
   # shellcheck source=../libexec/helper-scripts/log_run_die.sh
   source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
@@ -33,17 +39,17 @@ fi
 dkms_mok_variables_set() {
   ## NOTE: This function is 'source'ed by other scripts. It should stay simple.
   ##       I.e. it should not depend to 'source' other scripts.
-  dkms_mok_dir='/var/lib/dkms'
+  dkms_mok_dir="${SHIM_SIGNED_MOK_SETUP_DKMS_MOK_DIR:-}/var/lib/dkms"
   dkms_mok_public_file="${dkms_mok_dir}/mok.pub"
   dkms_mok_private_file="${dkms_mok_dir}/mok.key"
-  shim_mok_dir='/var/lib/shim-signed/mok'
+  shim_mok_dir="${SHIM_SIGNED_MOK_SETUP_DKMS_MOK_DIR:-}/var/lib/shim-signed/mok"
   shim_mok_public_file="${shim_mok_dir}/MOK.der"
   shim_mok_private_file="${shim_mok_dir}/MOK.priv"
 }
 
 shim_signed_mok_setup() {
   local dkms_mok_public_file dkms_mok_private_file \
-    shim_mok_dir shim_mok_public_file shim_mok_private_file \
+    shim_mok_public_file shim_mok_private_file \
     mok_keys_present third_party_kernel_module_warning
 
   as_root

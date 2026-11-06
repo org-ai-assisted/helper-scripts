@@ -1,0 +1,42 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## style-ok: no-strict - sourced library.
+
+## Single source of truth for the deb822 sources stanza of a derivative LOCAL
+## apt repository (the reprepro 'local' repo built from source). Sourced by
+## both the build-time mounter (derivative-maker help-steps/create-local-apt-repo)
+## and the on-system enabler (repo-add-local), so the stanza can never drift
+## between them.
+##
+## Trusted: yes is intrinsic to this stanza's purpose: a local throwaway file:
+## repo is unsigned, and apt 3.0 refuses an unsigned repo fatally. The trust
+## anchor is whoever owns the repo directory tree (root on /srv, or the build
+## user who produced the .debs under test). Point it only at a root-owned-end-
+## to-end path for an untrusted multi-user host; on a single-operator build/dev
+## box the build user IS the trust anchor.
+
+## local_apt_repo_sources_stanza <uri> <suite>
+##   <uri>   complete apt URI, e.g. file:/srv/.../kicksecure or file:/mnt/local-apt-repo/kicksecure
+##   <suite> reprepro codename, normally 'local'
+## Emits one deb822 stanza on stdout (no leading blank line; a caller appending
+## to a multi-stanza file adds its own separator).
+local_apt_repo_sources_stanza() {
+  local local_apt_repo_sources_stanza_uri local_apt_repo_sources_stanza_suite
+  local_apt_repo_sources_stanza_uri="${1:-}"
+  local_apt_repo_sources_stanza_suite="${2:-}"
+
+  if [ -z "${local_apt_repo_sources_stanza_uri}" ] \
+    || [ -z "${local_apt_repo_sources_stanza_suite}" ]; then
+    return 2
+  fi
+
+  printf '%s\n' "Types: deb
+URIs: ${local_apt_repo_sources_stanza_uri}
+Suites: ${local_apt_repo_sources_stanza_suite}
+Components: main contrib non-free
+Enabled: yes
+Trusted: yes"
+}
