@@ -96,6 +96,11 @@ default_if_empty client_onion_auth_dir "${tor_dir}/authdir"
 
 # shellcheck disable=SC2154
 if ! test -d "${client_onion_auth_dir}"; then
+   ## Create ancestors honoring umask first -- 'install -d' forces any missing
+   ## parent to 0755 (ignores umask and -m), which would widen e.g.
+   ## /var/lib/tor under a restrictive umask. Then create the authdir itself
+   ## atomically at 0700 (no mkdir-then-chmod TOCTOU window).
+   mkdir --parents -- "${client_onion_auth_dir%/*}"
    install -d -m 0700 -- "${client_onion_auth_dir}"
 fi
 
