@@ -40,3 +40,78 @@ Components: main contrib non-free
 Enabled: yes
 Trusted: yes"
 }
+
+## local_apt_repo_base_stanza <cache_root> <nick> <suite> <arch>
+##   Emit a deb822 'deb' stanza for ONE Debian-base suite served from a host apt cache exposed
+##   file-based (e.g. an approx cache bind-mounted under the shared folder). Includes ONLY the
+##   components whose UNCOMPRESSED Packages index is actually cache-resident: such a cache is a
+##   WARMED SUBSET, and a component the signed InRelease OFFERS but whose index is ABSENT makes
+##   'apt-get update' HARD-FAIL (exit 100). A component the suite does not offer is simply skipped
+##   by apt, so the hazard is offered-but-uncached -- which this filters out.
+##   The Release is GENUINE Debian-signed, so NO 'Trusted: yes' (it verifies against the shipped
+##   debian-archive-keyring). Prints nothing and returns 1 when the suite's InRelease is absent or
+##   NO component is resident -- the caller then emits no stanza for it, so apt falls back to the
+##   suite's normally-configured (e.g. Tor) source.
+##     <cache_root> directory holding <nick>/dists/... (e.g. /mnt/shared/aptcache)
+##     <nick>       cache nickname subdir (e.g. debian, debian-security)
+##     <suite>      suite/codename (e.g. trixie, trixie-updates, trixie-security)
+##     <arch>       binary arch (dpkg --print-architecture, e.g. amd64)
+local_apt_repo_base_stanza() {
+  local local_apt_repo_base_stanza_cache local_apt_repo_base_stanza_nick
+  local local_apt_repo_base_stanza_suite local_apt_repo_base_stanza_arch
+  local local_apt_repo_base_stanza_dists local_apt_repo_base_stanza_inrel
+  local local_apt_repo_base_stanza_resident local_apt_repo_base_stanza_hash
+  local local_apt_repo_base_stanza_path local_apt_repo_base_stanza_comp
+  local_apt_repo_base_stanza_cache="${1:-}"
+  local_apt_repo_base_stanza_nick="${2:-}"
+  local_apt_repo_base_stanza_suite="${3:-}"
+  local_apt_repo_base_stanza_arch="${4:-}"
+  if [ -z "${local_apt_repo_base_stanza_cache}" ] || [ -z "${local_apt_repo_base_stanza_nick}" ] \
+    || [ -z "${local_apt_repo_base_stanza_suite}" ] || [ -z "${local_apt_repo_base_stanza_arch}" ]; then
+    return 2
+  fi
+
+  local_apt_repo_base_stanza_dists="${local_apt_repo_base_stanza_cache}/${local_apt_repo_base_stanza_nick}/dists/${local_apt_repo_base_stanza_suite}"
+  local_apt_repo_base_stanza_inrel="${local_apt_repo_base_stanza_dists}/InRelease"
+  [ -r "${local_apt_repo_base_stanza_inrel}" ] || return 1
+
+  ## Each 'SHA256' entry '<64-hex> <size> <comp>/binary-<arch>/Packages' names a component the
+  ## suite offers; keep it only when its by-hash (or flat) index is on disk. The 64-hex anchor
+  ## confines the match to the SHA256 section (MD5Sum hashes are 32-hex).
+  local_apt_repo_base_stanza_resident=""
+  while read -r local_apt_repo_base_stanza_hash _ local_apt_repo_base_stanza_path; do
+    local_apt_repo_base_stanza_comp="${local_apt_repo_base_stanza_path%%/binary-"${local_apt_repo_base_stanza_arch}"/Packages}"
+    [ "${local_apt_repo_base_stanza_comp}" != "${local_apt_repo_base_stanza_path}" ] || continue
+    if [ -e "${local_apt_repo_base_stanza_dists}/${local_apt_repo_base_stanza_comp}/binary-${local_apt_repo_base_stanza_arch}/by-hash/SHA256/${local_apt_repo_base_stanza_hash}" ] \
+      || [ -e "${local_apt_repo_base_stanza_dists}/${local_apt_repo_base_stanza_comp}/binary-${local_apt_repo_base_stanza_arch}/Packages" ]; then
+      case " ${local_apt_repo_base_stanza_resident} " in
+        *" ${local_apt_repo_base_stanza_comp} "*)
+          ;;
+        *)
+          local_apt_repo_base_stanza_resident="${local_apt_repo_base_stanza_resident:+${local_apt_repo_base_stanza_resident} }${local_apt_repo_base_stanza_comp}"
+          ;;
+      esac
+    fi
+  done < <(grep -E "^ [0-9a-f]{64} +[0-9]+ [^ ]+/binary-${local_apt_repo_base_stanza_arch}/Packages\$" -- "${local_apt_repo_base_stanza_inrel}")
+
+  [ -n "${local_apt_repo_base_stanza_resident}" ] || return 1
+
+  ## No 'Trusted: yes': the genuine signed InRelease verifies against debian-archive-keyring.
+  printf '%s\n' "Types: deb
+URIs: file:${local_apt_repo_base_stanza_cache}/${local_apt_repo_base_stanza_nick}
+Suites: ${local_apt_repo_base_stanza_suite}
+Components: ${local_apt_repo_base_stanza_resident}
+Enabled: yes"
+}
+
+## local_apt_repo_pin
+##   Emit an apt preferences stanza pinning the file:-method local sources (the Debian-base cache
+##   above AND the derivative 'local' repo) above the normally-configured remotes, so an upgrade
+##   DOWNLOADS from the local file: content and only falls back to the remote (e.g. Tor) source for
+##   anything not present locally. The file: acquire method reports an EMPTY origin site, so
+##   'origin ""' selects exactly the local file: sources (it does not match http(s) remotes).
+local_apt_repo_pin() {
+  printf '%s\n' 'Package: *
+Pin: origin ""
+Pin-Priority: 1000'
+}

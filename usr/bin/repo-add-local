@@ -34,7 +34,9 @@ shopt -s shift_verbose
 export LC_ALL=C
 
 me="${0##*/}"
-guest_mount="/mnt/shared"
+## mnt-shared-vbox.service auto-mounts the host 'shared' folder here; a test seam points it at a
+## fixture dir (which also skips the real mountpoint restart below).
+guest_mount="${REPO_ADD_LOCAL_GUEST_MOUNT:-/mnt/shared}"
 codename="local"
 
 ## Single source of truth for the deb822 stanza (this package's libexec).
@@ -84,7 +86,8 @@ else
    ## Host-injected shared folder. The mount is Kicksecure's job: vm-config-dist's
    ## mnt-shared-vbox.service mounts 'shared' to /mnt/shared every boot; restart it
    ## if not mounted yet -- never reimplementing its mount logic.
-   if ! mountpoint --quiet -- "${guest_mount}"; then
+   ## Skip the real-mount dance when a test seam points guest_mount at a fixture (not a mountpoint).
+   if [ -z "${REPO_ADD_LOCAL_GUEST_MOUNT:-}" ] && ! mountpoint --quiet -- "${guest_mount}"; then
       printf '%s\n' "${me}: ${guest_mount} not mounted; restarting mnt-shared-vbox.service"
       systemctl restart mnt-shared-vbox.service || true
       mountpoint --quiet -- "${guest_mount}" \
@@ -106,9 +109,54 @@ fi
 ## The sources.list.d dir is an env seam (trusted env) so the tool is testable
 ## without writing to the real /etc/apt; production is the unset default.
 apt_sources_list_d="${REPO_ADD_LOCAL_SOURCES_LIST_D:-/etc/apt/sources.list.d}"
+apt_preferences_d="${REPO_ADD_LOCAL_PREFERENCES_D:-/etc/apt/preferences.d}"
 list_file="${apt_sources_list_d}/local-apt-repo-${location}.sources"
 local_apt_repo_sources_stanza "file:${repo_dir}" "${codename}" > "${list_file}"
 printf '%s\n' "${me}: wrote ${list_file}:"
 cat -- "${list_file}"
+
+## Pin the file:-method local sources above the normally-configured (e.g. Tor-routed) remotes so an
+## upgrade DOWNLOADS the local file: content and only falls back to the remote for what is not
+## present locally. Covers this derivative 'local' repo and the Debian-base cache sources below.
+local_apt_repo_pin > "${apt_preferences_d}/local-apt-repo.pref"
+printf '%s\n' "${me}: pinned local file: sources (${apt_preferences_d}/local-apt-repo.pref)"
+
+## Debian-base local upgrade (shared-folder case only): if the host also exposed an apt cache under
+## the shared tree at ${guest_mount}/aptcache (dm-shared-apt-repo bind-mounts the approx Debian
+## cache there), enable file: sources for the Debian base suites too -- genuine-signed, and only the
+## cache-RESIDENT components (local_apt_repo_base_stanza; a warmed cache is a subset, and an
+## offered-but-uncached component makes apt-get update hard-fail). Generic + best-effort: no cache,
+## or no resident component, -> skip (the base stays on its configured sources). Image-type-agnostic
+## (Kicksecure, Whonix, any -- same Debian base).
+if [ "${location}" = "mnt" ] && [ -d "${guest_mount}/aptcache" ]; then
+   base_cache="${guest_mount}/aptcache"
+   deb_codename="$( . /etc/os-release 2>/dev/null || true; printf '%s' "${VERSION_CODENAME:-}" )"
+   deb_arch="$(dpkg --print-architecture)"
+   base_file="${apt_sources_list_d}/local-apt-repo-base-mnt.sources"
+   if [ -z "${deb_codename}" ]; then
+      printf '%s\n' "${me}: no VERSION_CODENAME in /etc/os-release; skipping the Debian-base local cache" >&2
+   else
+      base_content=""
+      for base_spec in "debian:${deb_codename}" "debian:${deb_codename}-updates" "debian-security:${deb_codename}-security"; do
+         base_nick="${base_spec%%:*}"
+         base_suite="${base_spec#*:}"
+         if base_stanza="$(local_apt_repo_base_stanza "${base_cache}" "${base_nick}" "${base_suite}" "${deb_arch}")"; then
+            if [ -z "${base_content}" ]; then
+               base_content="${base_stanza}"
+            else
+               ## deb822 separates stanzas by a blank line.
+               base_content="${base_content}"$'\n\n'"${base_stanza}"
+            fi
+         fi
+      done
+      if [ -n "${base_content}" ]; then
+         printf '%s\n' "${base_content}" > "${base_file}"
+         printf '%s\n' "${me}: wrote ${base_file} (cache-resident Debian-base suite(s)):"
+         cat -- "${base_file}"
+      else
+         printf '%s\n' "${me}: apt cache at ${base_cache} has no cache-resident Debian-base suite -- base stays on its configured sources"
+      fi
+   fi
+fi
 
 printf '%s\n' "${me}: enabled. Next: apt-get update && apt-get install --only-upgrade <pkg>"
