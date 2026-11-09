@@ -539,7 +539,14 @@ string_bsh_tests() {
   run_test "safe_filename: rejects control char newline" validate_safe_filename 1 test_value $'hello\nworld'
   run_test "safe_filename: rejects leading dash" validate_safe_filename 1 test_value "-option"
   run_test "safe_filename: accepts colon" validate_safe_filename 0 test_value "test:test"
-  run_test "safe_filename: rejects overlong name" validate_safe_filename 1 test_value "$(head -c 256 /dev/zero | tr '\0' 'a')"
+  ## 256-byte name (one over the limit). printf -v is deterministic and
+  ## pipe-free: a piped generator (head|tr) could fail silently and leave a
+  ## short value that validate_safe_filename rejects for the WRONG reason,
+  ## passing the test vacuously.
+  local overlong_name
+  printf -v overlong_name '%256s' ''
+  overlong_name="${overlong_name// /a}"
+  run_test "safe_filename: rejects overlong name" validate_safe_filename 1 test_value "${overlong_name}"
   run_test "safe_filename: rejects unicode" validate_safe_filename 1 test_value $'caf\xC3\xA9'
 
   run_test "one_line: rejects empty" check_is_not_empty_and_only_one_line 1 test_value ""
