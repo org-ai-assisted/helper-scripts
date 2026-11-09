@@ -48,6 +48,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=./strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
@@ -85,16 +86,20 @@ fi
 
 ## /etc/torrc.d/65_gateway.conf
 ## ClientOnionAuthDir /var/lib/tor/authdir
+## tor_user/tor_group/tor_dir/client_onion_auth_dir are set via default_if_empty
+## (printf -v), an indirect assignment shellcheck cannot follow -> SC2154 below.
 default_if_empty tor_user "debian-tor"
 default_if_empty tor_group "debian-tor"
 default_if_empty tor_dir "/var/lib/tor"
+# shellcheck disable=SC2154
 default_if_empty client_onion_auth_dir "${tor_dir}/authdir"
 
+# shellcheck disable=SC2154
 if ! test -d "${client_onion_auth_dir}"; then
-   mkdir --parents -- "${client_onion_auth_dir}"
-   chmod 0700 -- "${client_onion_auth_dir}"
+   install -d -m 0700 -- "${client_onion_auth_dir}"
 fi
 
+# shellcheck disable=SC2154
 chown -- "${tor_user}:${tor_group}" "${client_onion_auth_dir}"
 
 if test -f /usr/share/anon-gw-base-files/gateway ; then
