@@ -26,6 +26,11 @@ fi
 ## The root component is named for the DERIVATIVE (Kicksecure / Whonix) via the
 ## canonical in-image marker files, not os-release (whose ID stays 'debian');
 ## the Debian package purls are unaffected.
+##
+## Components not managed by dpkg (Tor Browser, a tarball downloaded by
+## tb-updater) are contributed as CycloneDX fragments dropped into
+## /usr/share/sbom/fragments.d by their installer and merged into the output;
+## see derivative_sbom_generate and sbom-fragment-merge.
 
 ## Resolve the derivative identity from the canonical in-image marker files, NOT
 ## by reading os-release's ID (which stays 'debian' on a derivative). Whonix is
@@ -65,11 +70,34 @@ derivative_sbom_serial() {
    uuidgen --sha1 --namespace @url --name "sbom:${1}:${2}:${3}:${4}"
 }
 
+## True if the fragments drop-in directory holds at least one '*.cdx.json'.
+## nullglob so an empty/absent directory yields an empty array rather than the
+## literal glob.
+derivative_sbom_have_fragments() {
+   local frag_dir
+   local -a matches
+   frag_dir="$1"
+   [ -d "${frag_dir}" ] || return 1
+   shopt -s nullglob
+   matches=( "${frag_dir}"/*.cdx.json )
+   shopt -u nullglob
+   [ "${#matches[@]}" -gt 0 ]
+}
+
 ## Generate the SBOM to ${1} (a path, or '-' for stdout) with document timestamp
 ## ${2} (empty -> now). debsbom orders dependency edges via Python set iteration
 ## unless hash randomization is disabled, so pin PYTHONHASHSEED too.
+##
+## debsbom enumerates only dpkg-managed packages. Components installed into the
+## image by other means (Tor Browser, a signed tarball downloaded by tb-updater,
+## not a .deb) drop a CycloneDX fragment into SBOM_FRAGMENTS_DIR; when any exist
+## the debsbom output is piped through sbom-fragment-merge to splice them into
+## 'components'. With no fragments the output is byte-identical to debsbom's own,
+## so a plain (no-downloaded-app) image is unaffected. SBOM_FRAGMENTS_DIR is
+## env-overridable only so a unit test can point at a tmpdir fixture; unset
+## (production) it is /usr/share/sbom/fragments.d.
 derivative_sbom_generate() {
-   local out timestamp distro_arch sbom_serial out_target
+   local out timestamp distro_arch sbom_serial out_target frag_dir merge_tool
    out="$1"
    timestamp="$2"
    derivative_sbom_identity
@@ -85,14 +113,28 @@ derivative_sbom_generate() {
    else
       out_target="${out}"
    fi
-   debsbom generate \
-      --sbom-type cdx \
-      --cdx-schema-version 1.6 \
-      --cdx-serialnumber "${sbom_serial}" \
-      --timestamp "${timestamp}" \
-      --distro-name "${distro_id}" \
-      --distro-version "${distro_version}" \
-      --out - > "${out_target}"
+   frag_dir="${SBOM_FRAGMENTS_DIR:-/usr/share/sbom/fragments.d}"
+   merge_tool="${HELPER_SCRIPTS_PATH:-}/usr/libexec/helper-scripts/sbom-fragment-merge"
+   if derivative_sbom_have_fragments "${frag_dir}"; then
+      debsbom generate \
+         --sbom-type cdx \
+         --cdx-schema-version 1.6 \
+         --cdx-serialnumber "${sbom_serial}" \
+         --timestamp "${timestamp}" \
+         --distro-name "${distro_id}" \
+         --distro-version "${distro_version}" \
+         --out - \
+         | "${merge_tool}" "${frag_dir}" > "${out_target}"
+   else
+      debsbom generate \
+         --sbom-type cdx \
+         --cdx-schema-version 1.6 \
+         --cdx-serialnumber "${sbom_serial}" \
+         --timestamp "${timestamp}" \
+         --distro-name "${distro_id}" \
+         --distro-version "${distro_version}" \
+         --out - > "${out_target}"
+   fi
 }
 
 main() {

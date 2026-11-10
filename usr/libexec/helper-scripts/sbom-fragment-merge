@@ -1,0 +1,118 @@
+#!/usr/bin/python3 -Bsu
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Merge CycloneDX component fragments into a base CycloneDX SBOM.
+##
+## debsbom enumerates only dpkg-managed packages. Components installed into
+## the image by other means (Tor Browser, downloaded as a signed tarball by
+## tb-updater, not a .deb) are therefore absent from the base SBOM. Each such
+## producer drops a CycloneDX fragment describing what it installed into the
+## drop-in directory; this tool splices those fragments into the base SBOM's
+## 'components' array so the image SBOM is complete.
+##
+## Usage:
+##   debsbom generate ... --out - | sbom-fragment-merge FRAGMENTS_DIR > out.json
+##
+## FRAGMENTS_DIR is read for '*.cdx.json' files (sorted by name for a
+## deterministic result). A fragment is either a bare CycloneDX component
+## object ({"type": "application", "name": ...}) or a CycloneDX document whose
+## 'components' array is merged. Duplicate components (same purl, else same
+## bom-ref) are dropped so a re-run does not double-insert.
+##
+## Fail-closed: a missing/unreadable base, invalid JSON (base or any
+## fragment), or a fragment of an unexpected shape is a hard error. An
+## incomplete SBOM must never be emitted silently.
+
+from pathlib import Path
+import json
+import sys
+
+
+def die(msg):
+    print(f"sbom-fragment-merge: ERROR: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def component_key(component):
+    ## purl is the strongest identity; fall back to bom-ref. A component with
+    ## neither cannot be deduplicated, so key it by its own object identity
+    ## (always inserted, never treated as a duplicate).
+    if not isinstance(component, dict):
+        die("fragment component is not a JSON object")
+    purl = component.get("purl")
+    if isinstance(purl, str) and purl != "":
+        return ("purl", purl)
+    bom_ref = component.get("bom-ref")
+    if isinstance(bom_ref, str) and bom_ref != "":
+        return ("bom-ref", bom_ref)
+    return ("id", id(component))
+
+
+def components_from_fragment(path, data):
+    ## Accept a whole CycloneDX document (merge its 'components') or a single
+    ## bare component object.
+    if isinstance(data, dict) and "components" in data:
+        components = data["components"]
+        if not isinstance(components, list):
+            die(f"'{path}': 'components' is not a JSON array")
+        return components
+    if isinstance(data, dict) and "type" in data and "name" in data:
+        return [data]
+    die(f"'{path}': not a CycloneDX document or component object")
+
+
+def main():
+    if len(sys.argv) != 2:
+        die("usage: sbom-fragment-merge FRAGMENTS_DIR (base SBOM on stdin)")
+    fragments_dir = Path(sys.argv[1])
+
+    try:
+        base_text = sys.stdin.read()
+    except Exception as exc:
+        die(f"cannot read base SBOM from stdin: {exc}")
+    try:
+        base = json.loads(base_text)
+    except json.JSONDecodeError as exc:
+        die(f"base SBOM is not valid JSON: {exc}")
+    if not isinstance(base, dict):
+        die("base SBOM is not a JSON object")
+
+    components = base.get("components")
+    if components is None:
+        components = []
+        base["components"] = components
+    if not isinstance(components, list):
+        die("base SBOM 'components' is not a JSON array")
+
+    seen = set()
+    for component in components:
+        seen.add(component_key(component))
+
+    if fragments_dir.is_dir():
+        for fragment_path in sorted(fragments_dir.glob("*.cdx.json")):
+            try:
+                fragment_text = fragment_path.read_text(encoding="utf-8")
+            except Exception as exc:
+                die(f"cannot read fragment '{fragment_path}': {exc}")
+            try:
+                fragment_data = json.loads(fragment_text)
+            except json.JSONDecodeError as exc:
+                die(f"fragment '{fragment_path}' is not valid JSON: {exc}")
+            for component in components_from_fragment(fragment_path, fragment_data):
+                key = component_key(component)
+                if key in seen:
+                    continue
+                seen.add(key)
+                components.append(component)
+
+    ## Deterministic bytes: fixed indent, keys kept in source order. Given a
+    ## reproducible base (pinned serial/timestamp) and fixed fragments, the
+    ## merged document is byte-identical across rebuilds.
+    json.dump(base, sys.stdout, indent=2, ensure_ascii=False)
+    sys.stdout.write("\n")
+
+
+if __name__ == "__main__":
+    main()
