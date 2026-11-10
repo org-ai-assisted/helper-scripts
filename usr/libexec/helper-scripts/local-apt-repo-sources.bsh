@@ -41,7 +41,7 @@ Enabled: yes
 Trusted: yes"
 }
 
-## local_apt_repo_base_stanza <cache_root> <nick> <suite> <arch>
+## local_apt_repo_base_stanza <cache_root> <nick> <suite> <arch> [<uri_root>]
 ##   Emit a deb822 'deb' stanza for ONE Debian-base suite served from a local Debian mirror exposed
 ##   file-based (bind-mounted under the shared folder). Includes ONLY the components whose Packages
 ##   index is actually PRESENT on disk, in ANY form: a mirror stores the compressed index
@@ -54,20 +54,26 @@ Trusted: yes"
 ##   debian-archive-keyring). Prints nothing and returns 1 when the suite's InRelease is absent or
 ##   NO component is resident -- the caller then emits no stanza for it, so apt falls back to the
 ##   suite's normally-configured (e.g. Tor) source.
-##     <cache_root> directory holding <nick>/dists/... (e.g. /mnt/shared/aptcache)
+##     <cache_root> directory holding <nick>/dists/... to READ residency from (e.g. the host-side
+##                  bind-mount /srv/derivative-maker/.../aptcache)
 ##     <nick>       mirror archive subdir (e.g. debian, debian-security)
 ##     <suite>      suite/codename (e.g. trixie, trixie-updates, trixie-security)
 ##     <arch>       binary arch (dpkg --print-architecture, e.g. amd64)
+##     <uri_root>   OPTIONAL file: path to put in the EMITTED URI (default <cache_root>). Lets a
+##                  host-side caller read the mirror at its host path yet emit the GUEST mount path
+##                  (e.g. read /srv/.../aptcache, emit file:/mnt/shared/aptcache).
 local_apt_repo_base_stanza() {
   local local_apt_repo_base_stanza_cache local_apt_repo_base_stanza_nick
   local local_apt_repo_base_stanza_suite local_apt_repo_base_stanza_arch
   local local_apt_repo_base_stanza_dists local_apt_repo_base_stanza_inrel
   local local_apt_repo_base_stanza_resident local_apt_repo_base_stanza_bdir
   local local_apt_repo_base_stanza_hash local_apt_repo_base_stanza_path local_apt_repo_base_stanza_comp
+  local local_apt_repo_base_stanza_uri
   local_apt_repo_base_stanza_cache="${1:-}"
   local_apt_repo_base_stanza_nick="${2:-}"
   local_apt_repo_base_stanza_suite="${3:-}"
   local_apt_repo_base_stanza_arch="${4:-}"
+  local_apt_repo_base_stanza_uri="${5:-${local_apt_repo_base_stanza_cache}}"
   if [ -z "${local_apt_repo_base_stanza_cache}" ] || [ -z "${local_apt_repo_base_stanza_nick}" ] \
     || [ -z "${local_apt_repo_base_stanza_suite}" ] || [ -z "${local_apt_repo_base_stanza_arch}" ]; then
     return 2
@@ -88,11 +94,21 @@ local_apt_repo_base_stanza() {
   while read -r local_apt_repo_base_stanza_hash _ local_apt_repo_base_stanza_path; do
     local_apt_repo_base_stanza_comp="${local_apt_repo_base_stanza_path%%/binary-"${local_apt_repo_base_stanza_arch}"/Packages}"
     [ "${local_apt_repo_base_stanza_comp}" != "${local_apt_repo_base_stanza_path}" ] || continue
+    ## A real component is a single path segment (main, contrib, ...). A multi-segment name is a
+    ## SUB-index, e.g. 'main/debian-installer' (udebs) -- NOT a component; emitting it would make
+    ## apt load the installer udebs as ordinary packages. Skip anything with a '/'.
+    case "${local_apt_repo_base_stanza_comp}" in
+      */*)
+        continue
+        ;;
+    esac
     local_apt_repo_base_stanza_bdir="${local_apt_repo_base_stanza_dists}/${local_apt_repo_base_stanza_comp}/binary-${local_apt_repo_base_stanza_arch}"
-    if [ -e "${local_apt_repo_base_stanza_bdir}/Packages.gz" ] \
-      || [ -e "${local_apt_repo_base_stanza_bdir}/Packages.xz" ] \
-      || [ -e "${local_apt_repo_base_stanza_bdir}/Packages" ] \
-      || [ -e "${local_apt_repo_base_stanza_bdir}/by-hash/SHA256/${local_apt_repo_base_stanza_hash}" ]; then
+    ## Require a NON-empty index (-s): a 0-byte Packages.gz from a truncated sync would pass -e but
+    ## make apt-get update hard-fail; the genuine signed Release still verifies content.
+    if [ -s "${local_apt_repo_base_stanza_bdir}/Packages.gz" ] \
+      || [ -s "${local_apt_repo_base_stanza_bdir}/Packages.xz" ] \
+      || [ -s "${local_apt_repo_base_stanza_bdir}/Packages" ] \
+      || [ -s "${local_apt_repo_base_stanza_bdir}/by-hash/SHA256/${local_apt_repo_base_stanza_hash}" ]; then
       case " ${local_apt_repo_base_stanza_resident} " in
         *" ${local_apt_repo_base_stanza_comp} "*)
           ;;
@@ -106,25 +122,13 @@ local_apt_repo_base_stanza() {
   [ -n "${local_apt_repo_base_stanza_resident}" ] || return 1
 
   ## No 'Trusted: yes': the genuine signed InRelease verifies against debian-archive-keyring.
+  ## 'Architectures: <arch>' restricts the source to the arch the mirror actually holds -- without
+  ## it, a multi-arch guest (e.g. i386 added) would ask this file: source for an absent foreign-arch
+  ## index and apt-get update would hard-fail (exit 100).
   printf '%s\n' "Types: deb
-URIs: file:${local_apt_repo_base_stanza_cache}/${local_apt_repo_base_stanza_nick}
+URIs: file:${local_apt_repo_base_stanza_uri}/${local_apt_repo_base_stanza_nick}
 Suites: ${local_apt_repo_base_stanza_suite}
 Components: ${local_apt_repo_base_stanza_resident}
+Architectures: ${local_apt_repo_base_stanza_arch}
 Enabled: yes"
-}
-
-## local_apt_repo_pin
-##   Emit an apt preferences stanza pinning the file:-method local sources (the Debian-base mirror
-##   above AND the derivative 'local' repo) above the normally-configured remotes, so an upgrade
-##   DOWNLOADS from the local file: content and only falls back to the remote (e.g. Tor) source for
-##   anything not present locally. The file: acquire method reports an EMPTY origin site, so
-##   'origin ""' selects exactly the local file: sources (it does not match http(s) remotes).
-##   Priority 990 (NOT >=1000): it keeps the local file: source PREFERRED over the remote for an
-##   equal version (so a full upgrade stays offline), while staying below the 1000 'install even if
-##   it is a DOWNGRADE' threshold -- so a mirror that briefly lags the installed version can never
-##   force a silent downgrade; the newer remote version simply wins for those few packages.
-local_apt_repo_pin() {
-  printf '%s\n' 'Package: *
-Pin: origin ""
-Pin-Priority: 990'
 }
