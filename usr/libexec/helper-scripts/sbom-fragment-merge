@@ -5,8 +5,8 @@
 
 ## Merge CycloneDX component fragments into a base CycloneDX SBOM.
 ##
-## debsbom enumerates only dpkg-managed packages. Components installed into
-## the image by other means (Tor Browser, downloaded as a signed tarball by
+## debsbom enumerates only dpkg-managed packages. Components installed into the
+## image by other means (Tor Browser, downloaded as a signed tarball by
 ## tb-updater, not a .deb) are therefore absent from the base SBOM. Each such
 ## producer drops a CycloneDX fragment describing what it installed into the
 ## drop-in directory; this tool splices those fragments into the base SBOM's
@@ -15,18 +15,32 @@
 ## Usage:
 ##   debsbom generate ... --out - | sbom-fragment-merge FRAGMENTS_DIR > out.json
 ##
-## FRAGMENTS_DIR is read for '*.cdx.json' files (sorted by name for a
-## deterministic result). A fragment is either a bare CycloneDX component
-## object ({"type": "application", "name": ...}) or a CycloneDX document whose
-## 'components' array is merged. Duplicate components (same purl, else same
-## bom-ref) are dropped so a re-run does not double-insert.
+## FRAGMENTS_DIR is read for '*.cdx.json' REGULAR files (sorted by name for a
+## deterministic result; dotfiles ignored, matching the caller's shell gate). A
+## fragment is either a bare CycloneDX component object ({"type": "application",
+## "name": ...}) or a CycloneDX document whose 'components' array is merged.
 ##
-## Fail-closed: a missing/unreadable base, invalid JSON (base or any
-## fragment), or a fragment of an unexpected shape is a hard error. An
-## incomplete SBOM must never be emitted silently.
+## Deduplication + conflict rules (CycloneDX requires every bom-ref globally
+## unique):
+##   - a component whose purl already appears is a DUPLICATE -> dropped (so a
+##     re-run does not double-insert);
+##   - a component whose bom-ref collides with a DIFFERENT component (base
+##     component, the metadata root component, or another fragment) is a
+##     CONFLICT -> hard error (never silently drop a distinct component, never
+##     emit two objects sharing a bom-ref);
+##   - a component with neither purl nor bom-ref is deduplicated by exact content.
+##
+## Fail-closed: a missing/unreadable base, invalid JSON (incl. the non-standard
+## NaN/Infinity tokens), a non-regular fragment file (symlink/fifo refused -- a
+## symlink could exfiltrate a root-only file into the world-readable SBOM, a
+## fifo could hang the build), a fragment of an unexpected shape, or a component
+## missing the required 'type'/'name' is a hard error. An incomplete or
+## non-conforming SBOM must never be emitted silently.
 
 from pathlib import Path
+import hashlib
 import json
+import stat
 import sys
 
 
@@ -35,32 +49,86 @@ def die(msg):
     sys.exit(1)
 
 
-def component_key(component):
-    ## purl is the strongest identity; fall back to bom-ref. A component with
-    ## neither cannot be deduplicated, so key it by its own object identity
-    ## (always inserted, never treated as a duplicate).
-    if not isinstance(component, dict):
-        die("fragment component is not a JSON object")
-    purl = component.get("purl")
-    if isinstance(purl, str) and purl != "":
-        return ("purl", purl)
-    bom_ref = component.get("bom-ref")
-    if isinstance(bom_ref, str) and bom_ref != "":
-        return ("bom-ref", bom_ref)
-    return ("id", id(component))
+def _reject_constant(token):
+    ## json.loads calls this for the non-standard NaN / Infinity / -Infinity
+    ## tokens Python accepts by default; reject them so the output is valid JSON.
+    raise ValueError(f"non-standard JSON constant {token!r}")
+
+
+def load_json(text, what):
+    try:
+        ## JSONDecodeError is a ValueError, as is _reject_constant's raise.
+        return json.loads(text, parse_constant=_reject_constant)
+    except ValueError as exc:
+        die(f"{what} is not valid JSON: {exc}")
+
+
+def content_key(component):
+    return hashlib.sha256(
+        json.dumps(component, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def str_field(component, name):
+    value = component.get(name)
+    return value if isinstance(value, str) and value != "" else None
 
 
 def components_from_fragment(path, data):
-    ## Accept a whole CycloneDX document (merge its 'components') or a single
-    ## bare component object.
-    if isinstance(data, dict) and "components" in data:
-        components = data["components"]
-        if not isinstance(components, list):
-            die(f"'{path}': 'components' is not a JSON array")
-        return components
-    if isinstance(data, dict) and "type" in data and "name" in data:
+    ## A bare component is identified by its REQUIRED type+name; a CycloneDX
+    ## document is not (it carries bomFormat/specVersion, not a top-level
+    ## type+name). Check the component shape FIRST so a component that itself
+    ## has nested sub-'components' is not mistaken for a document (which would
+    ## drop the parent).
+    if not isinstance(data, dict):
+        die(f"'{path}': not a JSON object")
+    if isinstance(data.get("type"), str) and isinstance(data.get("name"), str):
         return [data]
+    components = data.get("components")
+    if isinstance(components, list):
+        return components
     die(f"'{path}': not a CycloneDX document or component object")
+
+
+def register(component, where, purls, refs, contents):
+    ## Validate + classify one incoming component. Returns True if it should be
+    ## appended, False if it is a duplicate; dies on a bom-ref conflict.
+    if not isinstance(component, dict):
+        die(f"{where}: component is not a JSON object")
+    if str_field(component, "type") is None or str_field(component, "name") is None:
+        die(f"{where}: component missing required string 'type'/'name'")
+    purl = str_field(component, "purl")
+    ref = str_field(component, "bom-ref")
+    if purl is not None and purl in purls:
+        return False
+    if ref is not None and ref in refs:
+        die(f"{where}: bom-ref '{ref}' collides with another component "
+            "(CycloneDX requires a globally unique bom-ref)")
+    if purl is None and ref is None:
+        key = content_key(component)
+        if key in contents:
+            return False
+        contents.add(key)
+        return True
+    if purl is not None:
+        purls.add(purl)
+    if ref is not None:
+        refs.add(ref)
+    return True
+
+
+def seed(component, purls, refs, contents):
+    ## Record an existing (base or metadata-root) component's identity so a
+    ## fragment cannot collide with it undetected.
+    if not isinstance(component, dict):
+        return
+    purl = str_field(component, "purl")
+    ref = str_field(component, "bom-ref")
+    if purl is not None:
+        purls.add(purl)
+    if ref is not None:
+        refs.add(ref)
+    contents.add(content_key(component))
 
 
 def main():
@@ -70,12 +138,9 @@ def main():
 
     try:
         base_text = sys.stdin.read()
-    except Exception as exc:
+    except OSError as exc:
         die(f"cannot read base SBOM from stdin: {exc}")
-    try:
-        base = json.loads(base_text)
-    except json.JSONDecodeError as exc:
-        die(f"base SBOM is not valid JSON: {exc}")
+    base = load_json(base_text, "base SBOM")
     if not isinstance(base, dict):
         die("base SBOM is not a JSON object")
 
@@ -86,32 +151,53 @@ def main():
     if not isinstance(components, list):
         die("base SBOM 'components' is not a JSON array")
 
-    seen = set()
+    purls = set()
+    refs = set()
+    contents = set()
+    ## Seed from the metadata root component (its bom-ref is referable too) and
+    ## from every base component.
+    metadata = base.get("metadata")
+    if isinstance(metadata, dict):
+        seed(metadata.get("component"), purls, refs, contents)
     for component in components:
-        seen.add(component_key(component))
+        seed(component, purls, refs, contents)
 
     if fragments_dir.is_dir():
-        for fragment_path in sorted(fragments_dir.glob("*.cdx.json")):
+        try:
+            entries = sorted(fragments_dir.glob("*.cdx.json"))
+        except OSError as exc:
+            die(f"cannot list fragments directory '{fragments_dir}': {exc}")
+        for fragment_path in entries:
+            ## Ignore dotfiles so the set matches the caller's bash '*.cdx.json'
+            ## gate (bash does not glob leading dots; pathlib does).
+            if fragment_path.name.startswith("."):
+                continue
+            ## Regular files only: refuse a symlink (could pull a root-only file
+            ## into the world-readable SBOM) or a fifo (could hang the build).
+            try:
+                st = fragment_path.lstat()
+            except OSError as exc:
+                die(f"cannot stat fragment '{fragment_path}': {exc}")
+            if not stat.S_ISREG(st.st_mode):
+                die(f"fragment '{fragment_path}' is not a regular file "
+                    "(symlink/fifo/other refused)")
             try:
                 fragment_text = fragment_path.read_text(encoding="utf-8")
-            except Exception as exc:
+            except OSError as exc:
                 die(f"cannot read fragment '{fragment_path}': {exc}")
-            try:
-                fragment_data = json.loads(fragment_text)
-            except json.JSONDecodeError as exc:
-                die(f"fragment '{fragment_path}' is not valid JSON: {exc}")
+            fragment_data = load_json(fragment_text, f"fragment '{fragment_path}'")
             for component in components_from_fragment(fragment_path, fragment_data):
-                key = component_key(component)
-                if key in seen:
-                    continue
-                seen.add(key)
-                components.append(component)
+                if register(component, f"fragment '{fragment_path}'",
+                            purls, refs, contents):
+                    components.append(component)
 
-    ## Deterministic bytes: fixed indent, keys kept in source order. Given a
-    ## reproducible base (pinned serial/timestamp) and fixed fragments, the
-    ## merged document is byte-identical across rebuilds.
-    json.dump(base, sys.stdout, indent=2, ensure_ascii=False)
-    sys.stdout.write("\n")
+    ## Deterministic bytes: fixed indent, keys in source order. Serialize fully
+    ## BEFORE writing so a serialization error cannot leave a half-written SBOM
+    ## behind the caller's redirect. Given a reproducible base (pinned
+    ## serial/timestamp) and fixed fragments, the output is byte-identical
+    ## across rebuilds.
+    output = json.dumps(base, indent=2, ensure_ascii=False) + "\n"
+    sys.stdout.write(output)
 
 
 if __name__ == "__main__":
