@@ -43,35 +43,48 @@ derivative_sbom_identity() {
       distro_id="Kicksecure"
       distro_version="$(cat -- "${etc_dir}/kicksecure_version")"
    elif [ -r "${etc_dir}/os-release" ]; then
+      ## Unset first so a field os-release does NOT set (e.g. VERSION_ID on
+      ## Debian sid) reads as empty, never inherited from the ambient environment.
       # shellcheck disable=SC1090
-      distro_id="$(. "${etc_dir}/os-release"; printf '%s' "${ID:-debian}")"
+      distro_id="$(unset ID VERSION_ID VERSION; . "${etc_dir}/os-release"; printf '%s' "${ID:-debian}")"
       # shellcheck disable=SC1090
-      distro_version="$(. "${etc_dir}/os-release"; printf '%s' "${VERSION_ID:-${VERSION:-}}")"
+      distro_version="$(unset ID VERSION_ID VERSION; . "${etc_dir}/os-release"; printf '%s' "${VERSION_ID:-${VERSION:-}}")"
    else
       distro_id="debian"
       distro_version=""
    fi
 }
 
-## Deterministic document serial for an identity: uuidgen --sha1 produces the
-## same RFC 4122 v5 UUID as a NAMESPACE_URL uuid5, so a reproducible build with a
-## pinned --timestamp is byte-identical. Args: <name> <version> <arch>.
+## Document serial for an identity+timestamp: uuidgen --sha1 produces the same
+## RFC 4122 v5 UUID as a NAMESPACE_URL uuid5. Including the timestamp means a
+## reproducible build (fixed --timestamp) is byte-identical across rebuilds,
+## while a user regenerating later (timestamp = now) gets a DISTINCT serial, so
+## two differing documents are not conflated under one id. Args: <name>
+## <version> <arch> <timestamp>.
 derivative_sbom_serial() {
-   uuidgen --sha1 --namespace @url --name "sbom:${1}:${2}:${3}"
+   uuidgen --sha1 --namespace @url --name "sbom:${1}:${2}:${3}:${4}"
 }
 
 ## Generate the SBOM to ${1} (a path, or '-' for stdout) with document timestamp
 ## ${2} (empty -> now). debsbom orders dependency edges via Python set iteration
 ## unless hash randomization is disabled, so pin PYTHONHASHSEED too.
 derivative_sbom_generate() {
-   local out timestamp distro_arch sbom_serial
+   local out timestamp distro_arch sbom_serial out_target
    out="$1"
    timestamp="$2"
    derivative_sbom_identity
    distro_arch="$(dpkg --print-architecture)"
    [ -n "${timestamp}" ] || timestamp="$(date --utc +%Y-%m-%dT%H:%M:%S+00:00)"
    export PYTHONHASHSEED=0
-   sbom_serial="$(derivative_sbom_serial "${distro_id}" "${distro_version}" "${distro_arch}")"
+   sbom_serial="$(derivative_sbom_serial "${distro_id}" "${distro_version}" "${distro_arch}" "${timestamp}")"
+   ## debsbom's own --out APPENDS '.cdx.json' unless the path already ends in it,
+   ## so a plain '--out foo.json' writes 'foo.json.cdx.json'. Emit to stdout and
+   ## redirect so the SBOM lands at EXACTLY ${out} (or stdout for '-').
+   if [ "${out}" = "-" ]; then
+      out_target="/dev/stdout"
+   else
+      out_target="${out}"
+   fi
    debsbom generate \
       --sbom-type cdx \
       --cdx-schema-version 1.6 \
@@ -79,7 +92,7 @@ derivative_sbom_generate() {
       --timestamp "${timestamp}" \
       --distro-name "${distro_id}" \
       --distro-version "${distro_version}" \
-      --out "${out}"
+      --out - > "${out_target}"
 }
 
 main() {
@@ -97,10 +110,12 @@ main() {
    while [ "$#" -gt 0 ]; do
       case "$1" in
          --out)
+            [ "$#" -ge 2 ] || { printf '%s\n' "${0##*/}: --out requires a value" >&2; exit 64; }
             out="$2"
             shift 2
             ;;
          --timestamp)
+            [ "$#" -ge 2 ] || { printf '%s\n' "${0##*/}: --timestamp requires a value" >&2; exit 64; }
             timestamp="$2"
             shift 2
             ;;
