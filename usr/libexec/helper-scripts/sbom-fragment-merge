@@ -38,13 +38,14 @@
 ## non-conforming SBOM must never be emitted silently.
 
 from pathlib import Path
+from typing import NoReturn
 import hashlib
 import json
 import stat
 import sys
 
 
-def die(msg):
+def die(msg) -> NoReturn:
     print(f"sbom-fragment-merge: ERROR: {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -186,9 +187,9 @@ def main():
     if not isinstance(components, list):
         die("base SBOM 'components' is not a JSON array")
 
-    purls = set()
-    refs = {}
-    contents = set()
+    purls: set[str] = set()
+    refs: dict[str, str] = {}
+    contents: set[str] = set()
     ## Seed from the metadata root component (its bom-ref is referable too) and
     ## from every base component tree.
     metadata = base.get("metadata")
