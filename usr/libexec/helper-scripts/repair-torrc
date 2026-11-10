@@ -50,9 +50,10 @@ if ! declare -F was_executed >/dev/null; then
 fi
 
 # shellcheck source=./strings.bsh
-## Explicit guard: `bash -e` does NOT abort on a failed `source` (a missing/
-## unreadable file returns non-zero but errexit does not fire on it), so fail
-## closed here rather than fall through to main with strings.bsh undefined.
+## Explicit guard: the `#!/bin/bash -e` shebang only applies when this script is
+## EXECUTED. When it is SOURCED (the unit test, with errexit deliberately off),
+## the shebang is a no-op and a failed `source` would fall through to main with
+## strings.bsh undefined. Fail closed here, independent of errexit / invocation.
 if ! source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh; then
    printf '%s\n' "$0: ERROR: cannot source strings.bsh!" >&2
    exit 1
