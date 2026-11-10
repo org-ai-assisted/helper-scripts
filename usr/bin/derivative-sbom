@@ -1,0 +1,128 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## provides was_executed
+# shellcheck source=../libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
+
+## Generate a CycloneDX software bill of materials (SBOM) describing the
+## currently installed system, from the live dpkg database via debsbom.
+##
+## One tool, two callers:
+##   - the image build (initializer-dist chroot-scripts-post.d/76_sbom) calls it
+##     with a pinned --timestamp to embed a reproducible, as-built SBOM.
+##   - a user on a running system calls it AFTER upgrades to get an up-to-date
+##     SBOM reflecting the current package set (the embedded, as-built SBOM is a
+##     point-in-time record and is NOT refreshed by apt; regenerate on demand):
+##        derivative-sbom > my-system.cdx.json
+##        sudo derivative-sbom --out /usr/share/sbom/system.cdx.json
+##
+## The root component is named for the DERIVATIVE (Kicksecure / Whonix) via the
+## canonical in-image marker files, not os-release (whose ID stays 'debian');
+## the Debian package purls are unaffected.
+
+## Resolve the derivative identity from the canonical in-image marker files, NOT
+## by reading os-release's ID (which stays 'debian' on a derivative). Whonix is
+## built on Kicksecure, so its marker wins; a plain (non-derivative) image falls
+## back to os-release ID/VERSION_ID. Sets the globals distro_id, distro_version.
+## SBOM_ETC_DIR is env-overridable ONLY so a unit test can point the reads at a
+## tmpdir fixture; unset (production) it is /etc.
+derivative_sbom_identity() {
+   local etc_dir
+   etc_dir="${SBOM_ETC_DIR:-/etc}"
+   if [ -r "${etc_dir}/whonix_version" ]; then
+      distro_id="Whonix"
+      distro_version="$(cat -- "${etc_dir}/whonix_version")"
+   elif [ -r "${etc_dir}/kicksecure_version" ]; then
+      distro_id="Kicksecure"
+      distro_version="$(cat -- "${etc_dir}/kicksecure_version")"
+   elif [ -r "${etc_dir}/os-release" ]; then
+      # shellcheck disable=SC1090
+      distro_id="$(. "${etc_dir}/os-release"; printf '%s' "${ID:-debian}")"
+      # shellcheck disable=SC1090
+      distro_version="$(. "${etc_dir}/os-release"; printf '%s' "${VERSION_ID:-${VERSION:-}}")"
+   else
+      distro_id="debian"
+      distro_version=""
+   fi
+}
+
+## Deterministic document serial for an identity: uuidgen --sha1 produces the
+## same RFC 4122 v5 UUID as a NAMESPACE_URL uuid5, so a reproducible build with a
+## pinned --timestamp is byte-identical. Args: <name> <version> <arch>.
+derivative_sbom_serial() {
+   uuidgen --sha1 --namespace @url --name "sbom:${1}:${2}:${3}"
+}
+
+## Generate the SBOM to ${1} (a path, or '-' for stdout) with document timestamp
+## ${2} (empty -> now). debsbom orders dependency edges via Python set iteration
+## unless hash randomization is disabled, so pin PYTHONHASHSEED too.
+derivative_sbom_generate() {
+   local out timestamp distro_arch sbom_serial
+   out="$1"
+   timestamp="$2"
+   derivative_sbom_identity
+   distro_arch="$(dpkg --print-architecture)"
+   [ -n "${timestamp}" ] || timestamp="$(date --utc +%Y-%m-%dT%H:%M:%S+00:00)"
+   export PYTHONHASHSEED=0
+   sbom_serial="$(derivative_sbom_serial "${distro_id}" "${distro_version}" "${distro_arch}")"
+   debsbom generate \
+      --sbom-type cdx \
+      --cdx-schema-version 1.6 \
+      --cdx-serialnumber "${sbom_serial}" \
+      --timestamp "${timestamp}" \
+      --distro-name "${distro_id}" \
+      --distro-version "${distro_version}" \
+      --out "${out}"
+}
+
+main() {
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+
+   local out timestamp
+   out="-"
+   timestamp=""
+   while [ "$#" -gt 0 ]; do
+      case "$1" in
+         --out)
+            out="$2"
+            shift 2
+            ;;
+         --timestamp)
+            timestamp="$2"
+            shift 2
+            ;;
+         -h|--help)
+            printf '%s\n' \
+               "Usage: ${0##*/} [--out FILE] [--timestamp ISO8601]" \
+               "  --out FILE        write the CycloneDX SBOM to FILE (default: stdout)" \
+               "  --timestamp TS    pin the document timestamp (default: now); the build" \
+               "                    passes SOURCE_DATE_EPOCH for a reproducible result"
+            exit 0
+            ;;
+         *)
+            printf '%s\n' "${0##*/}: unknown argument: $1" >&2
+            exit 64
+            ;;
+      esac
+   done
+
+   derivative_sbom_generate "${out}" "${timestamp}"
+}
+
+## Only auto-run when executed, not when sourced (unit tests source it).
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi
