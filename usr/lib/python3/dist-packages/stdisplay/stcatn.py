@@ -9,7 +9,7 @@ Safely print stdin or file to stdout with tweaks
 (trim trailing whitespace, ensure final newline).
 """
 
-from sys import argv, stdin, stdout
+import sys
 from stdisplay.stdisplay import stdisplay
 
 
@@ -18,28 +18,28 @@ def main() -> None:
     Safely print stdin or file to stdout with tweaks
     (trim trailing whitespace, ensure final newline).
     """
-    stdout.reconfigure(  # type: ignore
+    sys.stdout.reconfigure(  # type: ignore
         encoding="ascii", errors="replace", newline="\n"
     )
-    if stdin is not None:
-        stdin.reconfigure(  # type: ignore
+    if sys.stdin is not None:
+        sys.stdin.reconfigure(  # type: ignore
             encoding="utf-8", errors="replace", newline="\n"
         )
     ## End-of-options. The script doesn't support any options but this is good
     ## for consistency.
-    if len(argv) >= 2 and argv[1] == "--":
-        argv.pop(1)
-    if len(argv) == 1:
-        if stdin is not None:
-            for untrusted_line in stdin:
-                stdout.write(stdisplay(untrusted_line).rstrip() + "\n")
-            stdout.flush()
+    if len(sys.argv) >= 2 and sys.argv[1] == "--":
+        sys.argv.pop(1)
+    if len(sys.argv) == 1:
+        if sys.stdin is not None:
+            for untrusted_line in sys.stdin:
+                sys.stdout.write(stdisplay(untrusted_line).rstrip() + "\n")
+            sys.stdout.flush()
         return
-    for untrusted_arg in argv[1:]:
+    for untrusted_arg in sys.argv[1:]:
         if untrusted_arg == "-":
-            if stdin is not None:
-                for untrusted_line in stdin:
-                    stdout.write(stdisplay(untrusted_line).rstrip() + "\n")
+            if sys.stdin is not None:
+                for untrusted_line in sys.stdin:
+                    sys.stdout.write(stdisplay(untrusted_line).rstrip() + "\n")
         else:
             ## We cannot read the entire file in at once like we do with
             ## stcat, since we need to trim trailing whitespace from each
@@ -52,5 +52,5 @@ def main() -> None:
                 newline="\n",
             ) as untrusted_file:
                 for untrusted_line in untrusted_file:
-                    stdout.write(stdisplay(untrusted_line).rstrip() + "\n")
-    stdout.flush()
+                    sys.stdout.write(stdisplay(untrusted_line).rstrip() + "\n")
+    sys.stdout.flush()

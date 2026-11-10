@@ -12,9 +12,8 @@ Test the stdisplay module.
 """
 
 import os
-import unittest
 import curses
-from unittest import mock
+from unittest import TestCase, mock
 from typing import (
     Any,
 )
@@ -60,7 +59,7 @@ simple_escape_cases: list[tuple[str, str]] = [
 ]
 
 
-class TestSTDisplay(unittest.TestCase):
+class TestSTDisplay(TestCase):
     """
     Test stdisplay
     """
@@ -347,7 +346,7 @@ class TestSTDisplay(unittest.TestCase):
         self.run_stdisplay_cases(cases, sgr=2**24)
 
 
-class TestGetSgrSupport(unittest.TestCase):
+class TestGetSgrSupport(TestCase):
     """
     get_sgr_support() reads the environment to decide how much colour is safe.
     Its branches are env-dependent, so they are driven explicitly rather than
