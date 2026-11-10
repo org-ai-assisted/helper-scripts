@@ -50,7 +50,13 @@ if ! declare -F was_executed >/dev/null; then
 fi
 
 # shellcheck source=./strings.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
+## Explicit guard: `bash -e` does NOT abort on a failed `source` (a missing/
+## unreadable file returns non-zero but errexit does not fire on it), so fail
+## closed here rather than fall through to main with strings.bsh undefined.
+if ! source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh; then
+   printf '%s\n' "$0: ERROR: cannot source strings.bsh!" >&2
+   exit 1
+fi
 
 ## Create the client-onion-auth dir at 0700 without widening its parents.
 ## 'install -d' force-creates any MISSING parent at 0755 (ignores umask AND -m
