@@ -60,14 +60,16 @@ derivative_sbom_identity() {
    fi
 }
 
-## Document serial for an identity+timestamp: uuidgen --sha1 produces the same
-## RFC 4122 v5 UUID as a NAMESPACE_URL uuid5. Including the timestamp means a
-## reproducible build (fixed --timestamp) is byte-identical across rebuilds,
-## while a user regenerating later (timestamp = now) gets a DISTINCT serial, so
-## two differing documents are not conflated under one id. Args: <name>
-## <version> <arch> <timestamp>.
+## Document serial for an identity+timestamp: an RFC 4122 v5 (SHA-1) UUID over
+## the URL namespace, computed by sbom-serial (uuid.uuid5) so the serial needs
+## no uuidgen / uuid-runtime. Including the timestamp means a reproducible build
+## (fixed --timestamp) is byte-identical across rebuilds, while a user
+## regenerating later (timestamp = now) gets a DISTINCT serial, so two differing
+## documents are not conflated under one id. Args: <name> <version> <arch>
+## <timestamp>.
 derivative_sbom_serial() {
-   uuidgen --sha1 --namespace @url --name "sbom:${1}:${2}:${3}:${4}"
+   "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/sbom-serial \
+      "sbom:${1}:${2}:${3}:${4}"
 }
 
 ## True if the fragments drop-in directory holds at least one '*.cdx.json'.
