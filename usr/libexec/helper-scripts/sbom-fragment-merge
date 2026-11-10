@@ -64,8 +64,11 @@ def load_json(text, what):
 
 
 def content_key(component):
+    ## ensure_ascii=True so a lone surrogate in a string value cannot raise
+    ## during hashing (the OUTPUT path keeps ensure_ascii=False for readable
+    ## non-ASCII); this is an identity hash, not the emitted bytes.
     return hashlib.sha256(
-        json.dumps(component, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        json.dumps(component, sort_keys=True, ensure_ascii=True).encode("utf-8")
     ).hexdigest()
 
 
@@ -93,45 +96,74 @@ def components_from_fragment(path, data):
     die(f"'{path}': not a CycloneDX document or component object")
 
 
-def register(component, where, purls, refs, contents):
-    ## Validate + classify one incoming component. Returns True if it should be
-    ## appended, False if it is a duplicate; dies on a bom-ref conflict.
+def classify(component, where, purls, refs, contents):
+    ## Validate one incoming component and classify it as "add" (new, identity
+    ## recorded) or "dup" (already present -> drop); die on a bom-ref conflict
+    ## or an invalid component. type+name must be present strings; CycloneDX
+    ## allows an empty-string name, so do not require non-empty here.
     if not isinstance(component, dict):
         die(f"{where}: component is not a JSON object")
-    if str_field(component, "type") is None or str_field(component, "name") is None:
+    if not isinstance(component.get("type"), str) \
+       or not isinstance(component.get("name"), str):
         die(f"{where}: component missing required string 'type'/'name'")
+    key = content_key(component)
     purl = str_field(component, "purl")
     ref = str_field(component, "bom-ref")
-    if purl is not None and purl in purls:
-        return False
     if ref is not None and ref in refs:
-        die(f"{where}: bom-ref '{ref}' collides with another component "
+        ## Same bom-ref: a byte-identical component is a duplicate (idempotent
+        ## rerun); a DIFFERENT one sharing the ref violates uniqueness.
+        if refs[ref] == key:
+            return "dup"
+        die(f"{where}: bom-ref '{ref}' collides with a different component "
             "(CycloneDX requires a globally unique bom-ref)")
-    if purl is None and ref is None:
-        key = content_key(component)
-        if key in contents:
-            return False
-        contents.add(key)
-        return True
+    if purl is not None and purl in purls:
+        return "dup"
+    if purl is None and ref is None and key in contents:
+        return "dup"
+    if ref is not None:
+        refs[ref] = key
     if purl is not None:
         purls.add(purl)
-    if ref is not None:
-        refs.add(ref)
+    contents.add(key)
+    return "add"
+
+
+def register_tree(component, where, purls, refs, contents):
+    ## Validate + key a fragment component AND every nested descendant, so a
+    ## nested sub-component's bom-ref is checked for global uniqueness and shape
+    ## too. Nested children stay nested; only the TOP-LEVEL is appended. A
+    ## duplicate top-level means the whole subtree is a duplicate -> not
+    ## appended, not recursed.
+    if classify(component, where, purls, refs, contents) == "dup":
+        return False
+    nested = component.get("components")
+    if nested is not None:
+        if not isinstance(nested, list):
+            die(f"{where}: nested 'components' is not a JSON array")
+        for child in nested:
+            register_tree(child, f"{where} (nested)", purls, refs, contents)
     return True
 
 
-def seed(component, purls, refs, contents):
-    ## Record an existing (base or metadata-root) component's identity so a
-    ## fragment cannot collide with it undetected.
+def seed_tree(component, purls, refs, contents):
+    ## Record identities from the trusted base / metadata-root component tree
+    ## (including nested components) so a fragment cannot collide with any of
+    ## them undetected. The base is debsbom output and is trusted, so a stray
+    ## non-object is left as-is rather than rejected.
     if not isinstance(component, dict):
         return
+    key = content_key(component)
     purl = str_field(component, "purl")
     ref = str_field(component, "bom-ref")
+    if ref is not None:
+        refs[ref] = key
     if purl is not None:
         purls.add(purl)
-    if ref is not None:
-        refs.add(ref)
-    contents.add(content_key(component))
+    contents.add(key)
+    nested = component.get("components")
+    if isinstance(nested, list):
+        for child in nested:
+            seed_tree(child, purls, refs, contents)
 
 
 def main():
@@ -155,15 +187,15 @@ def main():
         die("base SBOM 'components' is not a JSON array")
 
     purls = set()
-    refs = set()
+    refs = {}
     contents = set()
     ## Seed from the metadata root component (its bom-ref is referable too) and
-    ## from every base component.
+    ## from every base component tree.
     metadata = base.get("metadata")
     if isinstance(metadata, dict):
-        seed(metadata.get("component"), purls, refs, contents)
+        seed_tree(metadata.get("component"), purls, refs, contents)
     for component in components:
-        seed(component, purls, refs, contents)
+        seed_tree(component, purls, refs, contents)
 
     if fragments_dir.is_dir():
         try:
@@ -188,10 +220,12 @@ def main():
                 fragment_text = fragment_path.read_text(encoding="utf-8")
             except OSError as exc:
                 die(f"cannot read fragment '{fragment_path}': {exc}")
+            except UnicodeDecodeError as exc:
+                die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
             fragment_data = load_json(fragment_text, f"fragment '{fragment_path}'")
             for component in components_from_fragment(fragment_path, fragment_data):
-                if register(component, f"fragment '{fragment_path}'",
-                            purls, refs, contents):
+                if register_tree(component, f"fragment '{fragment_path}'",
+                                 purls, refs, contents):
                     components.append(component)
 
     ## Deterministic bytes: fixed indent, keys in source order. Serialize fully
