@@ -121,13 +121,13 @@ cat -- "${list_file}"
 local_apt_repo_pin > "${apt_preferences_d}/local-apt-repo.pref"
 printf '%s\n' "${me}: pinned local file: sources (${apt_preferences_d}/local-apt-repo.pref)"
 
-## Debian-base local upgrade (shared-folder case only): if the host also exposed an apt cache under
-## the shared tree at ${guest_mount}/aptcache (dm-shared-apt-repo bind-mounts the approx Debian
-## cache there), enable file: sources for the Debian base suites too -- genuine-signed, and only the
-## cache-RESIDENT components (local_apt_repo_base_stanza; a warmed cache is a subset, and an
-## offered-but-uncached component makes apt-get update hard-fail). Generic + best-effort: no cache,
-## or no resident component, -> skip (the base stays on its configured sources). Image-type-agnostic
-## (Kicksecure, Whonix, any -- same Debian base).
+## Debian-base local upgrade (shared-folder case only): if the host also exposed a Debian mirror
+## under the shared tree at ${guest_mount}/aptcache (dm-shared-apt-repo bind-mounts the local
+## mirror there), enable file: sources for the Debian base suites too -- genuine-signed, and only
+## the RESIDENT components (local_apt_repo_base_stanza; an offered-but-absent component would make
+## apt-get update hard-fail, so a complete mirror emits all and a partial one only what it holds).
+## Generic + best-effort: no mirror, or no resident component, -> skip (the base stays on its
+## configured sources). Image-type-agnostic (Kicksecure, Whonix, any -- same Debian base).
 if [ "${location}" = "mnt" ] && [ -d "${guest_mount}/aptcache" ]; then
    base_cache="${guest_mount}/aptcache"
    deb_codename="$( . /etc/os-release 2>/dev/null || true; printf '%s' "${VERSION_CODENAME:-}" )"

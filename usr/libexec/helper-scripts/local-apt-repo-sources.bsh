@@ -42,26 +42,28 @@ Trusted: yes"
 }
 
 ## local_apt_repo_base_stanza <cache_root> <nick> <suite> <arch>
-##   Emit a deb822 'deb' stanza for ONE Debian-base suite served from a host apt cache exposed
-##   file-based (e.g. an approx cache bind-mounted under the shared folder). Includes ONLY the
-##   components whose UNCOMPRESSED Packages index is actually cache-resident: such a cache is a
-##   WARMED SUBSET, and a component the signed InRelease OFFERS but whose index is ABSENT makes
-##   'apt-get update' HARD-FAIL (exit 100). A component the suite does not offer is simply skipped
-##   by apt, so the hazard is offered-but-uncached -- which this filters out.
+##   Emit a deb822 'deb' stanza for ONE Debian-base suite served from a local Debian mirror exposed
+##   file-based (bind-mounted under the shared folder). Includes ONLY the components whose Packages
+##   index is actually PRESENT on disk, in ANY form: a mirror stores the compressed index
+##   (Packages.gz / Packages.xz) and typically NO uncompressed Packages and NO by-hash tree, so the
+##   residency test accepts any of those. This stays generic for a PARTIAL mirror too: a component
+##   the signed InRelease OFFERS but whose index is ABSENT makes 'apt-get update' HARD-FAIL (exit
+##   100), so an offered-but-absent component is filtered out; a component the suite does not offer
+##   is simply skipped by apt.
 ##   The Release is GENUINE Debian-signed, so NO 'Trusted: yes' (it verifies against the shipped
 ##   debian-archive-keyring). Prints nothing and returns 1 when the suite's InRelease is absent or
 ##   NO component is resident -- the caller then emits no stanza for it, so apt falls back to the
 ##   suite's normally-configured (e.g. Tor) source.
 ##     <cache_root> directory holding <nick>/dists/... (e.g. /mnt/shared/aptcache)
-##     <nick>       cache nickname subdir (e.g. debian, debian-security)
+##     <nick>       mirror archive subdir (e.g. debian, debian-security)
 ##     <suite>      suite/codename (e.g. trixie, trixie-updates, trixie-security)
 ##     <arch>       binary arch (dpkg --print-architecture, e.g. amd64)
 local_apt_repo_base_stanza() {
   local local_apt_repo_base_stanza_cache local_apt_repo_base_stanza_nick
   local local_apt_repo_base_stanza_suite local_apt_repo_base_stanza_arch
   local local_apt_repo_base_stanza_dists local_apt_repo_base_stanza_inrel
-  local local_apt_repo_base_stanza_resident local_apt_repo_base_stanza_hash
-  local local_apt_repo_base_stanza_path local_apt_repo_base_stanza_comp
+  local local_apt_repo_base_stanza_resident local_apt_repo_base_stanza_bdir
+  local local_apt_repo_base_stanza_hash local_apt_repo_base_stanza_path local_apt_repo_base_stanza_comp
   local_apt_repo_base_stanza_cache="${1:-}"
   local_apt_repo_base_stanza_nick="${2:-}"
   local_apt_repo_base_stanza_suite="${3:-}"
@@ -76,14 +78,21 @@ local_apt_repo_base_stanza() {
   [ -r "${local_apt_repo_base_stanza_inrel}" ] || return 1
 
   ## Each 'SHA256' entry '<64-hex> <size> <comp>/binary-<arch>/Packages' names a component the
-  ## suite offers; keep it only when its by-hash (or flat) index is on disk. The 64-hex anchor
-  ## confines the match to the SHA256 section (MD5Sum hashes are 32-hex).
+  ## suite offers; keep it only when its Packages index is on disk in ANY form -- compressed
+  ## (.gz/.xz), flat, or that entry's by-hash file. A mirror normally stores only the compressed
+  ## index (no uncompressed Packages, no by-hash), so checking the uncompressed Packages / its
+  ## by-hash alone would wrongly find nothing; checking .gz/.xz covers it. The 64-hex field is the
+  ## uncompressed-Packages hash (used for the by-hash lookup when a by-hash tree IS present); the
+  ## 64-hex anchor also confines the grep to the SHA256 section (MD5Sum hashes are 32-hex).
   local_apt_repo_base_stanza_resident=""
   while read -r local_apt_repo_base_stanza_hash _ local_apt_repo_base_stanza_path; do
     local_apt_repo_base_stanza_comp="${local_apt_repo_base_stanza_path%%/binary-"${local_apt_repo_base_stanza_arch}"/Packages}"
     [ "${local_apt_repo_base_stanza_comp}" != "${local_apt_repo_base_stanza_path}" ] || continue
-    if [ -e "${local_apt_repo_base_stanza_dists}/${local_apt_repo_base_stanza_comp}/binary-${local_apt_repo_base_stanza_arch}/by-hash/SHA256/${local_apt_repo_base_stanza_hash}" ] \
-      || [ -e "${local_apt_repo_base_stanza_dists}/${local_apt_repo_base_stanza_comp}/binary-${local_apt_repo_base_stanza_arch}/Packages" ]; then
+    local_apt_repo_base_stanza_bdir="${local_apt_repo_base_stanza_dists}/${local_apt_repo_base_stanza_comp}/binary-${local_apt_repo_base_stanza_arch}"
+    if [ -e "${local_apt_repo_base_stanza_bdir}/Packages.gz" ] \
+      || [ -e "${local_apt_repo_base_stanza_bdir}/Packages.xz" ] \
+      || [ -e "${local_apt_repo_base_stanza_bdir}/Packages" ] \
+      || [ -e "${local_apt_repo_base_stanza_bdir}/by-hash/SHA256/${local_apt_repo_base_stanza_hash}" ]; then
       case " ${local_apt_repo_base_stanza_resident} " in
         *" ${local_apt_repo_base_stanza_comp} "*)
           ;;
@@ -105,13 +114,17 @@ Enabled: yes"
 }
 
 ## local_apt_repo_pin
-##   Emit an apt preferences stanza pinning the file:-method local sources (the Debian-base cache
+##   Emit an apt preferences stanza pinning the file:-method local sources (the Debian-base mirror
 ##   above AND the derivative 'local' repo) above the normally-configured remotes, so an upgrade
 ##   DOWNLOADS from the local file: content and only falls back to the remote (e.g. Tor) source for
 ##   anything not present locally. The file: acquire method reports an EMPTY origin site, so
 ##   'origin ""' selects exactly the local file: sources (it does not match http(s) remotes).
+##   Priority 990 (NOT >=1000): it keeps the local file: source PREFERRED over the remote for an
+##   equal version (so a full upgrade stays offline), while staying below the 1000 'install even if
+##   it is a DOWNGRADE' threshold -- so a mirror that briefly lags the installed version can never
+##   force a silent downgrade; the newer remote version simply wins for those few packages.
 local_apt_repo_pin() {
   printf '%s\n' 'Package: *
 Pin: origin ""
-Pin-Priority: 1000'
+Pin-Priority: 990'
 }
