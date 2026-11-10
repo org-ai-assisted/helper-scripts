@@ -76,16 +76,19 @@ def str_field(component, name):
 
 def components_from_fragment(path, data):
     ## A bare component is identified by its REQUIRED type+name; a CycloneDX
-    ## document is not (it carries bomFormat/specVersion, not a top-level
-    ## type+name). Check the component shape FIRST so a component that itself
-    ## has nested sub-'components' is not mistaken for a document (which would
-    ## drop the parent).
+    ## document is identified by bomFormat. Check the component shape FIRST so a
+    ## component that itself carries nested sub-'components' is not mistaken for
+    ## a document (which would drop the parent). A document may legitimately
+    ## have zero top-level components (metadata only) -> nothing to add, not an
+    ## error.
     if not isinstance(data, dict):
         die(f"'{path}': not a JSON object")
     if isinstance(data.get("type"), str) and isinstance(data.get("name"), str):
         return [data]
-    components = data.get("components")
-    if isinstance(components, list):
+    if isinstance(data.get("bomFormat"), str):
+        components = data.get("components", [])
+        if not isinstance(components, list):
+            die(f"'{path}': 'components' is not a JSON array")
         return components
     die(f"'{path}': not a CycloneDX document or component object")
 
