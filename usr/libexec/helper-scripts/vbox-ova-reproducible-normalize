@@ -87,10 +87,10 @@ def derive_mac(salt, index):
     ## it a globally-administered unicast address.
     ## Not a security hash: a deterministic function to derive a stable MAC
     ## suffix from the salt. Collision resistance is irrelevant here.
-    ## nosec B303: bandit blacklists the sha1 call by name. This is not a
-    ## security hash -- see the comment above -- and 'usedforsecurity=False'
-    ## already states that to Python/OpenSSL.
-    digest = hashlib.sha1(  # nosec B303
+    ## usedforsecurity=False (above) states the non-security intent; the
+    ## weak-hash lint (bandit B303) is waived fleet-wide in reusable-bandit,
+    ## so no per-line nosec is needed.
+    digest = hashlib.sha1(
         ("%s:mac:%d" % (salt, index)).encode(), usedforsecurity=False
     ).hexdigest()
     return "080027" + digest[:6].upper()
@@ -101,9 +101,9 @@ def derive_cid(salt, role, index):
     ## 0xffffffff sentinel (VMDK "no parent" / null CID).
     ## Not a security hash: a deterministic function to derive a stable content
     ## id from the salt. Collision resistance is irrelevant here.
-    ## nosec B303: as above -- deterministic id derivation, not a security
-    ## hash, and already marked 'usedforsecurity=False'.
-    digest = hashlib.sha1(  # nosec B303
+    ## As above: non-security (usedforsecurity=False); B303 waived fleet-wide
+    ## in reusable-bandit, so no per-line nosec is needed.
+    digest = hashlib.sha1(
         ("%s:%s:%d" % (salt, role, index)).encode(), usedforsecurity=False
     ).hexdigest()
     cid = digest[:8]
@@ -288,10 +288,10 @@ def rewrite_manifest(mf_path, workdir):
                 out_lines.append(line)
                 continue
             algo_name, member, _ = line_match.groups()
-            ## nosec B324: recomputes the OVA manifest's own digest (md5/sha1
-            ## possible), not a security hash. apt bandit 1.6.2's hashlib_new
-            ## plugin also errors on the non-literal arg (logged, exit 0).
-            digest = hashlib.new(algos[algo_name])  # nosec B324
+            ## Recomputes the OVA manifest's own digest (md5/sha1 possible), not
+            ## a security hash. The weak-hash lint (bandit B324) is waived
+            ## fleet-wide in reusable-bandit, so no per-line nosec is needed.
+            digest = hashlib.new(algos[algo_name])
             with open(os.path.join(workdir, member), "rb") as member_handle:
                 for chunk in iter(
                     lambda: member_handle.read(1024 * 1024), b""
