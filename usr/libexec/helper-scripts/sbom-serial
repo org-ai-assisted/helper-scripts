@@ -35,7 +35,9 @@ def main() -> None:
     name_bytes = os.fsencode(sys.argv[1])
     ## usedforsecurity=False: SHA-1 here is mandated by the RFC 4122 v5 UUID
     ## construction (identity/dedup serial), not a security digest.
-    digest = hashlib.sha1(
+    ## nosec B303: apt bandit 1.6.2 ignores usedforsecurity and blacklists
+    ## the sha1 call by name; this is not a security hash (see above).
+    digest = hashlib.sha1(  # nosec B303
         uuid.NAMESPACE_URL.bytes + name_bytes, usedforsecurity=False
     ).digest()
     print(uuid.UUID(bytes=digest[:16], version=5))

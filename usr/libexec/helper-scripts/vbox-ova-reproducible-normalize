@@ -288,7 +288,10 @@ def rewrite_manifest(mf_path, workdir):
                 out_lines.append(line)
                 continue
             algo_name, member, _ = line_match.groups()
-            digest = hashlib.new(algos[algo_name])
+            ## nosec B324: recomputes the OVA manifest's own digest (md5/sha1
+            ## possible), not a security hash. apt bandit 1.6.2's hashlib_new
+            ## plugin also errors on the non-literal arg (logged, exit 0).
+            digest = hashlib.new(algos[algo_name])  # nosec B324
             with open(os.path.join(workdir, member), "rb") as member_handle:
                 for chunk in iter(
                     lambda: member_handle.read(1024 * 1024), b""
