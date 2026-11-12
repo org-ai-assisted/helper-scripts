@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import NoReturn
 import hashlib
 import json
+import os
 import stat
 import sys
 
@@ -206,30 +207,44 @@ def main():
     if not fragments_dir.is_dir():
         die(f"fragments directory '{fragments_dir}' does not exist or is not a "
             "directory (an existing empty directory is valid -> base-only)")
+    ## List explicitly, NOT Path.glob: CPython's glob swallows a listdir OSError
+    ## (an UNLISTABLE dir yields []), which would turn a missing-permission dir
+    ## into a silent fragment-less SBOM -- the same fail-open. Ignore dotfiles to
+    ## match the caller's bash '*.cdx.json' gate (bash does not glob leading
+    ## dots). Sorted for a deterministic result.
     try:
-        entries = sorted(fragments_dir.glob("*.cdx.json"))
+        with os.scandir(fragments_dir) as scan:
+            names = sorted(
+                entry.name
+                for entry in scan
+                if entry.name.endswith(".cdx.json")
+                and not entry.name.startswith(".")
+            )
     except OSError as exc:
         die(f"cannot list fragments directory '{fragments_dir}': {exc}")
-    for fragment_path in entries:
-        ## Ignore dotfiles so the set matches the caller's bash '*.cdx.json'
-        ## gate (bash does not glob leading dots; pathlib does).
-        if fragment_path.name.startswith("."):
-            continue
-        ## Regular files only: refuse a symlink (could pull a root-only file
-        ## into the world-readable SBOM) or a fifo (could hang the build).
+    for name in names:
+        fragment_path = fragments_dir / name
+        ## Open O_NOFOLLOW|O_NONBLOCK and fstat the fd: refuse a symlink (could
+        ## pull a root-only file into the world-readable SBOM) or a fifo (could
+        ## hang the build) ATOMICALLY. A plain lstat() precheck then a separate
+        ## read() leaves a TOCTOU window to swap in a symlink/fifo between the
+        ## two; the fd-based check has none, and O_NONBLOCK keeps a fifo open
+        ## from blocking before fstat can reject it.
         try:
-            st = fragment_path.lstat()
+            fd = os.open(fragment_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         except OSError as exc:
-            die(f"cannot stat fragment '{fragment_path}': {exc}")
-        if not stat.S_ISREG(st.st_mode):
-            die(f"fragment '{fragment_path}' is not a regular file "
-                "(symlink/fifo/other refused)")
+            die(f"cannot open fragment '{fragment_path}' "
+                f"(symlink/other refused): {exc}")
         try:
-            fragment_text = fragment_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            die(f"cannot read fragment '{fragment_path}': {exc}")
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                die(f"fragment '{fragment_path}' is not a regular file "
+                    "(symlink/fifo/other refused)")
+            with os.fdopen(fd, "r", encoding="utf-8") as handle:
+                fragment_text = handle.read()
         except UnicodeDecodeError as exc:
             die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
+        except OSError as exc:
+            die(f"cannot read fragment '{fragment_path}': {exc}")
         fragment_data = load_json(fragment_text, f"fragment '{fragment_path}'")
         for component in components_from_fragment(fragment_path, fragment_data):
             if register_tree(component, f"fragment '{fragment_path}'",
