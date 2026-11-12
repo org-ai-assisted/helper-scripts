@@ -75,6 +75,13 @@ derivative_sbom_serial() {
 ## True if the fragments drop-in directory holds at least one '*.cdx.json'.
 ## nullglob so an empty/absent directory yields an empty array rather than the
 ## literal glob.
+## An ABSENT dir legitimately means base-only: the drop-in is created on demand
+## by a producer (tb-updater) only when it drops a fragment, so a plain image has
+## no dir and must still succeed. Production runs this as root over the root-owned
+## drop-in, so a missing-permission (unlistable) dir does not arise; a mistyped
+## SBOM_FRAGMENTS_DIR is a test-only seam. A caller that hands sbom-fragment-merge
+## a non-existent / non-directory / unlistable path directly is rejected there
+## (that tool fails closed), which is the misuse surface this predicate does not.
 derivative_sbom_have_fragments() {
    local frag_dir
    local -a matches

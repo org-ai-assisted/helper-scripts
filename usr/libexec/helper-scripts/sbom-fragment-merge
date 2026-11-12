@@ -33,10 +33,11 @@
 ## Fail-closed: a non-existent or non-directory FRAGMENTS_DIR (misconfiguration;
 ## an existing EMPTY dir is valid -> base-only), a missing/unreadable base,
 ## invalid JSON (incl. the non-standard NaN/Infinity tokens), a non-regular
-## fragment file (symlink/fifo refused -- a symlink could exfiltrate a root-only
-## file into the world-readable SBOM, a fifo could hang the build), a fragment of
-## an unexpected shape, or a component missing the required 'type'/'name' is a
-## hard error. An incomplete or non-conforming SBOM must never be emitted silently.
+## fragment file (symlink/fifo/device refused -- a symlink could exfiltrate a
+## root-only file into the world-readable SBOM, a fifo could hang the build, a
+## device's bare open can have side effects), a fragment of an unexpected shape,
+## or a component missing the required 'type'/'name' is a hard error. An
+## incomplete or non-conforming SBOM must never be emitted silently.
 
 from pathlib import Path
 from typing import NoReturn
@@ -224,27 +225,32 @@ def main():
         die(f"cannot list fragments directory '{fragments_dir}': {exc}")
     for name in names:
         fragment_path = fragments_dir / name
-        ## Open O_NOFOLLOW|O_NONBLOCK and fstat the fd: refuse a symlink (could
-        ## pull a root-only file into the world-readable SBOM) or a fifo (could
-        ## hang the build) ATOMICALLY. A plain lstat() precheck then a separate
-        ## read() leaves a TOCTOU window to swap in a symlink/fifo between the
-        ## two; the fd-based check has none, and O_NONBLOCK keeps a fifo open
-        ## from blocking before fstat can reject it.
+        ## Open O_PATH|O_NOFOLLOW, fstat, then read the SAME inode back through
+        ## /proc/self/fd. O_PATH resolves the entry WITHOUT any real I/O or
+        ## open-method side effect and WITHOUT following a final symlink, so a
+        ## symlink (could pull a root-only file into the world-readable SBOM), a
+        ## fifo (a blocking open could hang the build) or a device node (a bare
+        ## open can have side effects, e.g. arming a watchdog) is rejected by the
+        ## fstat BEFORE any such effect. Reopening via the pinned fd closes the
+        ## stat->read TOCTOU: the bytes read are the inode fstat validated, even
+        ## if the directory entry is swapped in between.
         try:
-            fd = os.open(fragment_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            fd = os.open(fragment_path, os.O_PATH | os.O_NOFOLLOW)
         except OSError as exc:
-            die(f"cannot open fragment '{fragment_path}' "
-                f"(symlink/other refused): {exc}")
+            die(f"cannot open fragment '{fragment_path}': {exc}")
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 die(f"fragment '{fragment_path}' is not a regular file "
-                    "(symlink/fifo/other refused)")
-            with os.fdopen(fd, "r", encoding="utf-8") as handle:
-                fragment_text = handle.read()
-        except UnicodeDecodeError as exc:
-            die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
-        except OSError as exc:
-            die(f"cannot read fragment '{fragment_path}': {exc}")
+                    "(symlink/fifo/device/other refused)")
+            try:
+                with open(f"/proc/self/fd/{fd}", encoding="utf-8") as handle:
+                    fragment_text = handle.read()
+            except UnicodeDecodeError as exc:
+                die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
+            except OSError as exc:
+                die(f"cannot read fragment '{fragment_path}': {exc}")
+        finally:
+            os.close(fd)
         fragment_data = load_json(fragment_text, f"fragment '{fragment_path}'")
         for component in components_from_fragment(fragment_path, fragment_data):
             if register_tree(component, f"fragment '{fragment_path}'",
