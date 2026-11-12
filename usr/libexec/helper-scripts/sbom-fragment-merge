@@ -30,12 +30,13 @@
 ##     emit two objects sharing a bom-ref);
 ##   - a component with neither purl nor bom-ref is deduplicated by exact content.
 ##
-## Fail-closed: a missing/unreadable base, invalid JSON (incl. the non-standard
-## NaN/Infinity tokens), a non-regular fragment file (symlink/fifo refused -- a
-## symlink could exfiltrate a root-only file into the world-readable SBOM, a
-## fifo could hang the build), a fragment of an unexpected shape, or a component
-## missing the required 'type'/'name' is a hard error. An incomplete or
-## non-conforming SBOM must never be emitted silently.
+## Fail-closed: a non-existent or non-directory FRAGMENTS_DIR (misconfiguration;
+## an existing EMPTY dir is valid -> base-only), a missing/unreadable base,
+## invalid JSON (incl. the non-standard NaN/Infinity tokens), a non-regular
+## fragment file (symlink/fifo refused -- a symlink could exfiltrate a root-only
+## file into the world-readable SBOM, a fifo could hang the build), a fragment of
+## an unexpected shape, or a component missing the required 'type'/'name' is a
+## hard error. An incomplete or non-conforming SBOM must never be emitted silently.
 
 from pathlib import Path
 from typing import NoReturn
@@ -198,36 +199,42 @@ def main():
     for component in components:
         seed_tree(component, purls, refs, contents)
 
-    if fragments_dir.is_dir():
+    ## Fail closed on a missing/mistyped FRAGMENTS_DIR: a non-existent or
+    ## non-directory path is misconfiguration, and silently emitting a
+    ## fragment-less (incomplete) SBOM would be a fail-open. An existing EMPTY
+    ## directory is valid -> zero fragments -> base-only output.
+    if not fragments_dir.is_dir():
+        die(f"fragments directory '{fragments_dir}' does not exist or is not a "
+            "directory (an existing empty directory is valid -> base-only)")
+    try:
+        entries = sorted(fragments_dir.glob("*.cdx.json"))
+    except OSError as exc:
+        die(f"cannot list fragments directory '{fragments_dir}': {exc}")
+    for fragment_path in entries:
+        ## Ignore dotfiles so the set matches the caller's bash '*.cdx.json'
+        ## gate (bash does not glob leading dots; pathlib does).
+        if fragment_path.name.startswith("."):
+            continue
+        ## Regular files only: refuse a symlink (could pull a root-only file
+        ## into the world-readable SBOM) or a fifo (could hang the build).
         try:
-            entries = sorted(fragments_dir.glob("*.cdx.json"))
+            st = fragment_path.lstat()
         except OSError as exc:
-            die(f"cannot list fragments directory '{fragments_dir}': {exc}")
-        for fragment_path in entries:
-            ## Ignore dotfiles so the set matches the caller's bash '*.cdx.json'
-            ## gate (bash does not glob leading dots; pathlib does).
-            if fragment_path.name.startswith("."):
-                continue
-            ## Regular files only: refuse a symlink (could pull a root-only file
-            ## into the world-readable SBOM) or a fifo (could hang the build).
-            try:
-                st = fragment_path.lstat()
-            except OSError as exc:
-                die(f"cannot stat fragment '{fragment_path}': {exc}")
-            if not stat.S_ISREG(st.st_mode):
-                die(f"fragment '{fragment_path}' is not a regular file "
-                    "(symlink/fifo/other refused)")
-            try:
-                fragment_text = fragment_path.read_text(encoding="utf-8")
-            except OSError as exc:
-                die(f"cannot read fragment '{fragment_path}': {exc}")
-            except UnicodeDecodeError as exc:
-                die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
-            fragment_data = load_json(fragment_text, f"fragment '{fragment_path}'")
-            for component in components_from_fragment(fragment_path, fragment_data):
-                if register_tree(component, f"fragment '{fragment_path}'",
-                                 purls, refs, contents):
-                    components.append(component)
+            die(f"cannot stat fragment '{fragment_path}': {exc}")
+        if not stat.S_ISREG(st.st_mode):
+            die(f"fragment '{fragment_path}' is not a regular file "
+                "(symlink/fifo/other refused)")
+        try:
+            fragment_text = fragment_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            die(f"cannot read fragment '{fragment_path}': {exc}")
+        except UnicodeDecodeError as exc:
+            die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
+        fragment_data = load_json(fragment_text, f"fragment '{fragment_path}'")
+        for component in components_from_fragment(fragment_path, fragment_data):
+            if register_tree(component, f"fragment '{fragment_path}'",
+                             purls, refs, contents):
+                components.append(component)
 
     ## Deterministic bytes: fixed indent, keys in source order. Serialize fully
     ## BEFORE writing so a serialization error cannot leave a half-written SBOM
