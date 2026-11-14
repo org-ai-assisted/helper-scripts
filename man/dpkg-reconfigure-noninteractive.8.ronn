@@ -1,0 +1,26 @@
+dpkg-reconfigure-noninteractive(8) -- wrapper to run `dpkg-reconfigure` non-interactively
+=============================================
+
+<!--
+# Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+# See the file COPYING for copying conditions.
+-->
+
+## SYNOPSIS
+`dpkg-reconfigure-noninteractive` [args...]
+
+## DESCRIPTION
+Simple wrapper that sets environment variables for non-interactive use,
+including `POLICYRCD` and `NEEDRESTART_MODE` to suppress daemon restarts
+during reconfiguration, then forwards all arguments to `dpkg-reconfigure`.
+These variables are only set when unset or empty, so a value already present
+in the environment is preserved. No debconf prompts will appear during
+reconfiguration.
+
+## EXAMPLES
+`sudo dpkg-reconfigure-noninteractive tzdata`
+
+`sudo dpkg-reconfigure-noninteractive keyboard-configuration`
+
+## AUTHOR
+This man page has been written by Patrick Schleizer (adrelanos@whonix.org).

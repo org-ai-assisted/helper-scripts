@@ -46,10 +46,9 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     ## Keep a reference to the gui_message object to ensure the garbage
     ## collector does not destroy it.
-    # pylint: ignore=unused-variable
+    # pylint: disable=unused-variable
     message = gui_message(sys.argv[1], sys.argv[2])
     sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
-

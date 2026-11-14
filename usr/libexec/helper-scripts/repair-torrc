@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2018 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## Copyright (C) 2018 Iry Koon <iry@riseup.net>
@@ -41,6 +41,38 @@
 ## on non-Whonix systems, prints a warning and exits
 #### meta end
 
+## provides was_executed
+# shellcheck source=./check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
+
+# shellcheck source=./strings.bsh
+## Explicit guard: the `#!/bin/bash -e` shebang only applies when this script is
+## EXECUTED. When it is SOURCED (the unit test, with errexit deliberately off),
+## the shebang is a no-op and a failed `source` would fall through to main with
+## strings.bsh undefined. Fail closed here, independent of errexit / invocation.
+if ! source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh; then
+   printf '%s\n' "$0: ERROR: cannot source strings.bsh!" >&2
+   exit 1
+fi
+
+## Create the client-onion-auth dir at 0700 without widening its parents.
+## 'install -d' force-creates any MISSING parent at 0755 (ignores umask AND -m
+## for ancestors), which would widen e.g. /var/lib/tor under a restrictive
+## (hardened) umask when the parent is absent. Create ancestors with
+## umask-honored 'mkdir --parents' first, then 'install -d -m 0700' the dir
+## itself atomically (no mkdir-then-chmod TOCTOU window).
+repair_torrc_create_authdir() {
+   local authdir
+   authdir="$1"
+   mkdir --parents -- "${authdir%/*}"
+   install -d -m 0700 -- "${authdir}"
+}
+
+main() {
 set -x
 set -o errexit
 set -o nounset
@@ -48,9 +80,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
-
-# shellcheck source=./strings.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
+export LC_ALL=C
 
 true "$0: START"
 
@@ -85,16 +115,20 @@ fi
 
 ## /etc/torrc.d/65_gateway.conf
 ## ClientOnionAuthDir /var/lib/tor/authdir
+## tor_user/tor_group/tor_dir/client_onion_auth_dir are set via default_if_empty
+## (printf -v), an indirect assignment shellcheck cannot follow -> SC2154 below.
 default_if_empty tor_user "debian-tor"
 default_if_empty tor_group "debian-tor"
 default_if_empty tor_dir "/var/lib/tor"
+# shellcheck disable=SC2154
 default_if_empty client_onion_auth_dir "${tor_dir}/authdir"
 
+# shellcheck disable=SC2154
 if ! test -d "${client_onion_auth_dir}"; then
-   mkdir --parents -- "${client_onion_auth_dir}"
-   chmod 0700 -- "${client_onion_auth_dir}"
+   repair_torrc_create_authdir "${client_onion_auth_dir}"
 fi
 
+# shellcheck disable=SC2154
 chown -- "${tor_user}:${tor_group}" "${client_onion_auth_dir}"
 
 if test -f /usr/share/anon-gw-base-files/gateway ; then
@@ -170,3 +204,9 @@ else
 fi
 
 true "$0: END"
+}
+
+## Only auto-run when executed, not when sourced (unit tests source it).
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi

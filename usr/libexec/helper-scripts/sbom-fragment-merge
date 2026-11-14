@@ -1,0 +1,270 @@
+#!/usr/bin/python3 -Bsu
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Merge CycloneDX component fragments into a base CycloneDX SBOM.
+##
+## debsbom enumerates only dpkg-managed packages. Components installed into the
+## image by other means (Tor Browser, downloaded as a signed tarball by
+## tb-updater, not a .deb) are therefore absent from the base SBOM. Each such
+## producer drops a CycloneDX fragment describing what it installed into the
+## drop-in directory; this tool splices those fragments into the base SBOM's
+## 'components' array so the image SBOM is complete.
+##
+## Usage:
+##   debsbom generate ... --out - | sbom-fragment-merge FRAGMENTS_DIR > out.json
+##
+## FRAGMENTS_DIR is read for '*.cdx.json' REGULAR files (sorted by name for a
+## deterministic result; dotfiles ignored, matching the caller's shell gate). A
+## fragment is either a bare CycloneDX component object ({"type": "application",
+## "name": ...}) or a CycloneDX document whose 'components' array is merged.
+##
+## Deduplication + conflict rules (CycloneDX requires every bom-ref globally
+## unique):
+##   - a component whose purl already appears is a DUPLICATE -> dropped (so a
+##     re-run does not double-insert);
+##   - a component whose bom-ref collides with a DIFFERENT component (base
+##     component, the metadata root component, or another fragment) is a
+##     CONFLICT -> hard error (never silently drop a distinct component, never
+##     emit two objects sharing a bom-ref);
+##   - a component with neither purl nor bom-ref is deduplicated by exact content.
+##
+## Fail-closed: a non-existent or non-directory FRAGMENTS_DIR (misconfiguration;
+## an existing EMPTY dir is valid -> base-only), a missing/unreadable base,
+## invalid JSON (incl. the non-standard NaN/Infinity tokens), a non-regular
+## fragment file (symlink/fifo/device refused -- a symlink could exfiltrate a
+## root-only file into the world-readable SBOM, a fifo could hang the build, a
+## device's bare open can have side effects), a fragment of an unexpected shape,
+## or a component missing the required 'type'/'name' is a hard error. An
+## incomplete or non-conforming SBOM must never be emitted silently.
+
+from pathlib import Path
+from typing import NoReturn
+import hashlib
+import json
+import os
+import stat
+import sys
+
+
+def die(msg) -> NoReturn:
+    print(f"sbom-fragment-merge: ERROR: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def _reject_constant(token):
+    ## json.loads calls this for the non-standard NaN / Infinity / -Infinity
+    ## tokens Python accepts by default; reject them so the output is valid JSON.
+    raise ValueError(f"non-standard JSON constant {token!r}")
+
+
+def load_json(text, what):
+    try:
+        ## JSONDecodeError is a ValueError, as is _reject_constant's raise.
+        return json.loads(text, parse_constant=_reject_constant)
+    except ValueError as exc:
+        die(f"{what} is not valid JSON: {exc}")
+
+
+def content_key(component):
+    ## ensure_ascii=True so a lone surrogate in a string value cannot raise
+    ## during hashing (the OUTPUT path keeps ensure_ascii=False for readable
+    ## non-ASCII); this is an identity hash, not the emitted bytes.
+    return hashlib.sha256(
+        json.dumps(component, sort_keys=True, ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
+
+
+def str_field(component, name):
+    value = component.get(name)
+    return value if isinstance(value, str) and value != "" else None
+
+
+def components_from_fragment(path, data):
+    ## A bare component is identified by its REQUIRED type+name; a CycloneDX
+    ## document is identified by bomFormat. Check the component shape FIRST so a
+    ## component that itself carries nested sub-'components' is not mistaken for
+    ## a document (which would drop the parent). A document may legitimately
+    ## have zero top-level components (metadata only) -> nothing to add, not an
+    ## error.
+    if not isinstance(data, dict):
+        die(f"'{path}': not a JSON object")
+    if isinstance(data.get("type"), str) and isinstance(data.get("name"), str):
+        return [data]
+    if isinstance(data.get("bomFormat"), str):
+        components = data.get("components", [])
+        if not isinstance(components, list):
+            die(f"'{path}': 'components' is not a JSON array")
+        return components
+    die(f"'{path}': not a CycloneDX document or component object")
+
+
+def classify(component, where, purls, refs, contents):
+    ## Validate one incoming component and classify it as "add" (new, identity
+    ## recorded) or "dup" (already present -> drop); die on a bom-ref conflict
+    ## or an invalid component. type+name must be present strings; CycloneDX
+    ## allows an empty-string name, so do not require non-empty here.
+    if not isinstance(component, dict):
+        die(f"{where}: component is not a JSON object")
+    if not isinstance(component.get("type"), str) \
+       or not isinstance(component.get("name"), str):
+        die(f"{where}: component missing required string 'type'/'name'")
+    key = content_key(component)
+    purl = str_field(component, "purl")
+    ref = str_field(component, "bom-ref")
+    if ref is not None and ref in refs:
+        ## Same bom-ref: a byte-identical component is a duplicate (idempotent
+        ## rerun); a DIFFERENT one sharing the ref violates uniqueness.
+        if refs[ref] == key:
+            return "dup"
+        die(f"{where}: bom-ref '{ref}' collides with a different component "
+            "(CycloneDX requires a globally unique bom-ref)")
+    if purl is not None and purl in purls:
+        return "dup"
+    if purl is None and ref is None and key in contents:
+        return "dup"
+    if ref is not None:
+        refs[ref] = key
+    if purl is not None:
+        purls.add(purl)
+    contents.add(key)
+    return "add"
+
+
+def register_tree(component, where, purls, refs, contents):
+    ## Validate + key a fragment component AND every nested descendant, so a
+    ## nested sub-component's bom-ref is checked for global uniqueness and shape
+    ## too. Nested children stay nested; only the TOP-LEVEL is appended. A
+    ## duplicate top-level means the whole subtree is a duplicate -> not
+    ## appended, not recursed.
+    if classify(component, where, purls, refs, contents) == "dup":
+        return False
+    nested = component.get("components")
+    if nested is not None:
+        if not isinstance(nested, list):
+            die(f"{where}: nested 'components' is not a JSON array")
+        for child in nested:
+            register_tree(child, f"{where} (nested)", purls, refs, contents)
+    return True
+
+
+def seed_tree(component, purls, refs, contents):
+    ## Record identities from the trusted base / metadata-root component tree
+    ## (including nested components) so a fragment cannot collide with any of
+    ## them undetected. The base is debsbom output and is trusted, so a stray
+    ## non-object is left as-is rather than rejected.
+    if not isinstance(component, dict):
+        return
+    key = content_key(component)
+    purl = str_field(component, "purl")
+    ref = str_field(component, "bom-ref")
+    if ref is not None:
+        refs[ref] = key
+    if purl is not None:
+        purls.add(purl)
+    contents.add(key)
+    nested = component.get("components")
+    if isinstance(nested, list):
+        for child in nested:
+            seed_tree(child, purls, refs, contents)
+
+
+def main():
+    if len(sys.argv) != 2:
+        die("usage: sbom-fragment-merge FRAGMENTS_DIR (base SBOM on stdin)")
+    fragments_dir = Path(sys.argv[1])
+
+    try:
+        base_text = sys.stdin.read()
+    except OSError as exc:
+        die(f"cannot read base SBOM from stdin: {exc}")
+    base = load_json(base_text, "base SBOM")
+    if not isinstance(base, dict):
+        die("base SBOM is not a JSON object")
+
+    components = base.get("components")
+    if components is None:
+        components = []
+        base["components"] = components
+    if not isinstance(components, list):
+        die("base SBOM 'components' is not a JSON array")
+
+    purls: set[str] = set()
+    refs: dict[str, str] = {}
+    contents: set[str] = set()
+    ## Seed from the metadata root component (its bom-ref is referable too) and
+    ## from every base component tree.
+    metadata = base.get("metadata")
+    if isinstance(metadata, dict):
+        seed_tree(metadata.get("component"), purls, refs, contents)
+    for component in components:
+        seed_tree(component, purls, refs, contents)
+
+    ## Fail closed on a missing/mistyped FRAGMENTS_DIR: a non-existent or
+    ## non-directory path is misconfiguration, and silently emitting a
+    ## fragment-less (incomplete) SBOM would be a fail-open. An existing EMPTY
+    ## directory is valid -> zero fragments -> base-only output.
+    if not fragments_dir.is_dir():
+        die(f"fragments directory '{fragments_dir}' does not exist or is not a "
+            "directory (an existing empty directory is valid -> base-only)")
+    ## List explicitly, NOT Path.glob: CPython's glob swallows a listdir OSError
+    ## (an UNLISTABLE dir yields []), which would turn a missing-permission dir
+    ## into a silent fragment-less SBOM -- the same fail-open. Ignore dotfiles to
+    ## match the caller's bash '*.cdx.json' gate (bash does not glob leading
+    ## dots). Sorted for a deterministic result.
+    try:
+        with os.scandir(fragments_dir) as scan:
+            names = sorted(
+                entry.name
+                for entry in scan
+                if entry.name.endswith(".cdx.json")
+                and not entry.name.startswith(".")
+            )
+    except OSError as exc:
+        die(f"cannot list fragments directory '{fragments_dir}': {exc}")
+    for name in names:
+        fragment_path = fragments_dir / name
+        ## Open O_PATH|O_NOFOLLOW, fstat, then read the SAME inode back through
+        ## /proc/self/fd. O_PATH resolves the entry WITHOUT any real I/O or
+        ## open-method side effect and WITHOUT following a final symlink, so a
+        ## symlink (could pull a root-only file into the world-readable SBOM), a
+        ## fifo (a blocking open could hang the build) or a device node (a bare
+        ## open can have side effects, e.g. arming a watchdog) is rejected by the
+        ## fstat BEFORE any such effect. Reopening via the pinned fd closes the
+        ## stat->read TOCTOU: the bytes read are the inode fstat validated, even
+        ## if the directory entry is swapped in between.
+        try:
+            fd = os.open(fragment_path, os.O_PATH | os.O_NOFOLLOW)
+        except OSError as exc:
+            die(f"cannot open fragment '{fragment_path}': {exc}")
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                die(f"fragment '{fragment_path}' is not a regular file "
+                    "(symlink/fifo/device/other refused)")
+            try:
+                with open(f"/proc/self/fd/{fd}", encoding="utf-8") as handle:
+                    fragment_text = handle.read()
+            except UnicodeDecodeError as exc:
+                die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
+            except OSError as exc:
+                die(f"cannot read fragment '{fragment_path}': {exc}")
+        finally:
+            os.close(fd)
+        fragment_data = load_json(fragment_text, f"fragment '{fragment_path}'")
+        for component in components_from_fragment(fragment_path, fragment_data):
+            if register_tree(component, f"fragment '{fragment_path}'",
+                             purls, refs, contents):
+                components.append(component)
+
+    ## Deterministic bytes: fixed indent, keys in source order. Serialize fully
+    ## BEFORE writing so a serialization error cannot leave a half-written SBOM
+    ## behind the caller's redirect. Given a reproducible base (pinned
+    ## serial/timestamp) and fixed fragments, the output is byte-identical
+    ## across rebuilds.
+    output = json.dumps(base, indent=2, ensure_ascii=False) + "\n"
+    sys.stdout.write(output)
+
+
+if __name__ == "__main__":
+    main()

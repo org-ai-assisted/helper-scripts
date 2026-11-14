@@ -45,9 +45,12 @@ def main() -> NoReturn:
 
     ## secrets.randbelow() excludes the upper bound, so we need to add 1 to
     ## get a number that is between the upper and lower bound inclusive.
-    secret_bound: int = (upper_bound - lower_bound) + 1
-    secret_val: int = secrets.randbelow(secret_bound)
-    print(secret_val + lower_bound)
+    rand_span: int = (upper_bound - lower_bound) + 1
+    rand_val: int = secrets.randbelow(rand_span)
+    print(rand_val + lower_bound)
+    ## main() is annotated NoReturn (every error path already sys.exit()s); exit
+    ## explicitly on success too, so no path falls off the end and returns.
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()

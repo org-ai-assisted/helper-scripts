@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## Copyright (C) 2012 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
 ## live_status_* variables are used, but indirectly.
@@ -9,7 +9,11 @@
 true "$0: START"
 
 # shellcheck source=./check_runtime.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+  exit 1
+fi
 # shellcheck source=./strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
@@ -72,7 +76,7 @@ else
   danger_writable_list_empty='false'
 fi
 for danger_writable_fs in "${danger_writable_fs_list[@]}"; do
-  if [ "${danger_writable_fs}" = '/' ]; then
+  if [ "${danger_writable_fs}" = '/' ] || [ "${danger_writable_fs}" = '/run/initramfs/overlayfs' ]; then
     live_state_str='persistent'
     break
   fi

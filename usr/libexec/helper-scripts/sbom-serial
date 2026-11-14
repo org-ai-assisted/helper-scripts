@@ -1,0 +1,47 @@
+#!/usr/bin/python3 -Bsu
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Print the RFC 4122 v5 (SHA-1) UUID of a name over the URL namespace.
+##
+## derivative-sbom uses this for the CycloneDX document serial. Computing it
+## from the Python stdlib means the serial needs no uuidgen / uuid-runtime --
+## not a helper-scripts dependency, absent on minimal and CI environments, where
+## a uuidgen-based serial aborts the build.
+##
+## Byte-for-byte drop-in for 'uuidgen --sha1 --namespace @url --name <name>':
+## uuid.uuid5 encodes the name as UTF-8 and would raise on a name that is not
+## valid UTF-8, whereas uuidgen hashes the raw argument bytes. So hash the raw
+## bytes directly (recovered from argv via os.fsencode / surrogateescape); the
+## result is identical to uuidgen for ASCII, well-formed UTF-8, AND arbitrary
+## bytes, and never crashes on a malformed name.
+##
+## Usage: sbom-serial <name>
+
+import hashlib
+import os
+import sys
+import uuid
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print(
+            f"{sys.argv[0]}: ERROR: expected exactly one <name> argument",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    name_bytes = os.fsencode(sys.argv[1])
+    ## usedforsecurity=False: SHA-1 here is mandated by the RFC 4122 v5 UUID
+    ## construction (identity/dedup serial), not a security digest.
+    ## nosec B303: apt bandit 1.6.2 ignores usedforsecurity and blacklists
+    ## the sha1 call by name; this is not a security hash (see above).
+    digest = hashlib.sha1(  # nosec B303
+        uuid.NAMESPACE_URL.bytes + name_bytes, usedforsecurity=False
+    ).digest()
+    print(uuid.UUID(bytes=digest[:16], version=5))
+
+
+if __name__ == "__main__":
+    main()
