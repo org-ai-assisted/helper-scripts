@@ -8,8 +8,10 @@
 ## Single source of truth for the deb822 sources stanza of a derivative LOCAL
 ## apt repository (the reprepro 'local' repo built from source). Sourced by
 ## both the build-time mounter (derivative-maker help-steps/create-local-apt-repo)
-## and the on-system enabler (repo-add-local), so the stanza can never drift
-## between them.
+## and the DEV-ONLY on-system enabler (dist-ai's repo-add-local, delivered to a
+## test guest over the shared folder), so the stanza can never drift between them.
+## This library stays shipped in helper-scripts: the build-time mounter runs it on
+## every image build, so it must not depend on a dist-ai checkout.
 ##
 ## Trusted: yes is intrinsic to this stanza's purpose: a local throwaway file:
 ## repo is unsigned, and apt 3.0 refuses an unsigned repo fatally. The trust
