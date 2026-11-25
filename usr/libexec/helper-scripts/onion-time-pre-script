@@ -315,9 +315,7 @@ extra guess: Tor consensus might be outdated and download might still be in prog
       else
          true
       fi
-   elif [ "${tor_consensus_valid_after_output}" = "" ] && [ "${tor_consensus_valid_until_output}" = "" ]; then
-      ## No consensus fetched yet: the exit codes may be 0 while the outputs are EMPTY (see the note
-      ## below), so key on empty OUTPUT, not an impossible '277' exit code (the helper exits 0-255).
+   elif [ "${tor_consensus_valid_after_output}" = "" ] || [ "${tor_consensus_valid_until_output}" = "" ]; then
       clock_tor_consensus_check_result="noneyet"
       clock_tor_consensus_check_msg="Might not have downloaded a Tor consensus yet."
    else

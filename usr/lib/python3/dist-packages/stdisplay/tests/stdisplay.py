@@ -77,7 +77,7 @@ class TestSTDisplay(TestCase):
         self, cases: list[tuple[str, str]], **kwargs: Any
     ) -> None:
         """
-        Run cases with unittest.TestCase().subTest() for easy debugging.
+        Run cases with TestCase().subTest() for easy debugging.
         """
         for text, expected_result in cases:
             with self.subTest(text=text, expected_result=expected_result):

@@ -36,8 +36,7 @@ if [ -r "${script}" ]; then
   out_env_data="$(comm -13 <(printf '%s\n' "${before}") <(printf '%s\n' "${after}"))"
 
   while read -r out_env_line; do
-    ## comm emits a leading empty line when out_env_data is empty; skip it so no
-    ## bogus `=""` is printed.
+    ## comm emits a leading empty line when out_env_data is empty, skip it.
     [ -n "${out_env_line}" ] || continue
     ## out_env_line is a shell-quoted environment variable item, word splitting
     ## expands it back into its original form safely.

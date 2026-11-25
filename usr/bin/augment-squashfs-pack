@@ -172,9 +172,7 @@ if [ -n "${from_overlay}" ]; then
    pack_root="$(overlay_upperdir_of "${from_overlay}")"
    if [ -z "${pack_root}" ] || [ ! -d "${pack_root}" ] ; then
       printf '%s\n' "${me}: NOTE: '${from_overlay}' has no overlay upperdir, skipping." >&2
-      ## Drop any stale output file from a previous run so it cannot be installed.
-      ## Guard the directory case: safe-rm without --recursive fails on a dir,
-      ## which under errexit would turn this clean skip into a hard error.
+      ## Remove any output file from a previous run so it cannot be installed.
       if [ ! -d "${output_squashfs}" ]; then
          safe-rm --force -- "${output_squashfs}"
       fi

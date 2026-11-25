@@ -5,85 +5,42 @@
 
 ## style-ok: no-strict - sourced library.
 
-## Single source of truth for the deb822 sources stanza of a derivative LOCAL
-## apt repository (the reprepro 'local' repo built from source). Sourced by
-## both the build-time mounter (derivative-maker help-steps/create-local-apt-repo)
-## and the DEV-ONLY on-system enabler (dist-ai's repo-add-local, delivered to a
-## test guest over the shared folder), so the stanza can never drift between them.
-## This library stays shipped in helper-scripts: the build-time mounter runs it on
-## every image build, so it must not depend on a dist-ai checkout.
-##
-## The Debian-base mirror stanza generator (local_apt_repo_base_stanza) is DEV-ONLY
-## (no build-time user) and lives in dist-ai (usr/libexec/dist-ai/local-apt-repo-base.bsh).
-##
-## Trusted: yes is intrinsic to this stanza's purpose: a local throwaway file:
-## repo is unsigned, and apt 3.0 refuses an unsigned repo fatally. The trust
-## anchor is whoever owns the repo directory tree (root on /srv, or the build
-## user who produced the .debs under test). Point it only at a root-owned-end-
-## to-end path for an untrusted multi-user host; on a single-operator build/dev
-## box the build user IS the trust anchor.
-
-## local_apt_repo_sources_stanza <uri> <suite> [<read_root>] [<arch>]
-##   <uri>       complete apt URI, e.g. file:/srv/.../kicksecure or file:/mnt/local-apt-repo/kicksecure
-##   <suite>     reprepro codename, normally 'local'
-##   <read_root> OPTIONAL disk path to READ component residency from (default: the file: URI's own
-##               path). Lets a HOST-side caller that emits a GUEST mount URI (e.g. file:/mnt/shared/...)
-##               still read the repo at its readable host path.
-##   <arch>      OPTIONAL binary arch for the residency probe (default: this machine's
-##               `dpkg --print-architecture`, falling back to amd64 if dpkg is absent). A caller
-##               generating sources for a DIFFERENT target arch (e.g. a host emitting a guest's
-##               sources) MUST pass the target's arch -- the default is the LOCAL arch.
-##   Components: ONLY those whose native-arch Packages index (binary-<arch>/Packages) is present AND
-##   non-empty. reprepro writes an EMPTY (0-byte) Packages for a configured-but-unpopulated component
-##   (e.g. a whonix repo with no contrib/non-free packages); apt on a file: source then HARD-FAILS
-##   fetching that index (and a vboxsf shared folder does not reliably serve a 0-byte file to a
-##   guest), so an empty component must be dropped. reprepro folds arch:all packages INTO each
-##   binary-<arch> index (no binary-all tree), and apt fetches binary-<arch> for the configured arch,
-##   so binary-<arch> is the authoritative residency signal -- probing binary-all too would keep a
-##   component whose binary-<arch>/Packages is 0-byte and re-introduce the very hard-fail this drops.
-##   When the repo path is unreadable (residency undeterminable), fall back to 'main' -- always
-##   present in a derivative local repo -- never the over-broad set that breaks on an empty component.
-## Emits one deb822 stanza on stdout (no leading blank line; a caller appending
-## to a multi-stanza file adds its own separator).
+## Given a file: URI pointing to a local apt repository, and accompanying
+## metadata, outputs a deb822 sources stanza that will tell apt to use that
+## repository.
 local_apt_repo_sources_stanza() {
-  local local_apt_repo_sources_stanza_uri local_apt_repo_sources_stanza_suite
-  local local_apt_repo_sources_stanza_read local_apt_repo_sources_stanza_arch
-  local local_apt_repo_sources_stanza_dists local_apt_repo_sources_stanza_cdir
-  local local_apt_repo_sources_stanza_comp local_apt_repo_sources_stanza_comps
-  local_apt_repo_sources_stanza_uri="${1:-}"
-  local_apt_repo_sources_stanza_suite="${2:-}"
-  local_apt_repo_sources_stanza_read="${3:-}"
-  local_apt_repo_sources_stanza_arch="${4:-$(dpkg --print-architecture 2>/dev/null || printf '%s' amd64)}"
+  local uri suite repo_path arch dist_path component_path component_str \
+    component_list_str
 
-  if [ -z "${local_apt_repo_sources_stanza_uri}" ] \
-    || [ -z "${local_apt_repo_sources_stanza_suite}" ]; then
+  uri="${1:-}"
+  suite="${2:-}"
+  repo_path="${3:-}"
+  arch="${4:-$(dpkg --print-architecture 2>/dev/null || printf '%s' amd64)}"
+
+  if [ -z "${uri}" ] \
+    || [ -z "${suite}" ]; then
     return 2
   fi
 
-  ## Default residency read path: the file: URI's own path (correct on-system, where the URI IS the
-  ## local path; a caller emitting a guest URI passes the host read_root explicitly).
-  if [ -z "${local_apt_repo_sources_stanza_read}" ]; then
-    local_apt_repo_sources_stanza_read="${local_apt_repo_sources_stanza_uri#file:}"
+  if [ -z "${repo_path}" ]; then
+    repo_path="${uri#file:}"
   fi
-  local_apt_repo_sources_stanza_dists="${local_apt_repo_sources_stanza_read}/dists/${local_apt_repo_sources_stanza_suite}"
-  local_apt_repo_sources_stanza_comps=""
-  for local_apt_repo_sources_stanza_cdir in "${local_apt_repo_sources_stanza_dists}"/*/; do
-    [ -d "${local_apt_repo_sources_stanza_cdir}" ] || continue
-    ## resident = this component's native-arch Packages index is NON-EMPTY. Probe binary-<arch> ONLY:
-    ## apt fetches that for the configured arch and HARD-FAILS on a 0-byte/absent one, so it is the
-    ## authoritative signal (reprepro folds arch:all into it; there is no binary-all tree to consult).
-    if [ -s "${local_apt_repo_sources_stanza_cdir}binary-${local_apt_repo_sources_stanza_arch}/Packages" ]; then
-      local_apt_repo_sources_stanza_comp="${local_apt_repo_sources_stanza_cdir%/}"
-      local_apt_repo_sources_stanza_comp="${local_apt_repo_sources_stanza_comp##*/}"
-      local_apt_repo_sources_stanza_comps="${local_apt_repo_sources_stanza_comps}${local_apt_repo_sources_stanza_comps:+ }${local_apt_repo_sources_stanza_comp}"
+  dist_path="${repo_path}/dists/${suite}"
+  component_list_str=""
+  for component_path in "${dist_path}"/*/; do
+    [ -d "${component_path}" ] || continue
+    if [ -s "${component_path}binary-${arch}/Packages" ]; then
+      component_str="${component_path%/}"
+      component_str="${component_str##*/}"
+      component_list_str="${component_list_str}${component_list_str:+ }${component_str}"
     fi
   done
-  [ -n "${local_apt_repo_sources_stanza_comps}" ] || local_apt_repo_sources_stanza_comps="main"
+  [ -n "${component_list_str}" ] || component_list_str="main"
 
   printf '%s\n' "Types: deb
-URIs: ${local_apt_repo_sources_stanza_uri}
-Suites: ${local_apt_repo_sources_stanza_suite}
-Components: ${local_apt_repo_sources_stanza_comps}
+URIs: ${uri}
+Suites: ${suite}
+Components: ${component_list_str}
 Enabled: yes
 Trusted: yes"
 }

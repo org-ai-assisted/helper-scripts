@@ -1,0 +1,23 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## style-ok: no-strict -- sourced library.
+
+manage_lc_all_c_orig="${LC_ALL-UNSET}"
+
+enable_lc_all_c() {
+  [ "${manage_lc_all_c_orig}" = 'C' ] && return;
+  export LC_ALL='C'
+}
+
+disable_lc_all_c() {
+   [ "${manage_lc_all_c_orig}" = 'C' ] && return;
+
+   if [ "${manage_lc_all_c_orig}" = 'UNSET' ]; then
+      unset LC_ALL
+   else
+      export LC_ALL="${manage_lc_all_c_orig}"
+   fi
+}

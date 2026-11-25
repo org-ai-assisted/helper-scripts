@@ -17,7 +17,6 @@ if [ "$(id -un)" = 'root' ]; then
   ## Avoid using 'sudo' if already using account 'root'. Reasons:
   ## - Using 'sudo' is unnecessary in this case.
   ## - Would work in case of a 'user-sysmaint-split' or 'sudo' bug.
-  ## "$@" forwards apt-get options (e.g. '--yes' for non-interactive automation).
   exec /usr/bin/apt-get --update full-upgrade "$@"
 fi
 
@@ -43,10 +42,10 @@ if package-installed-check user-sysmaint-split; then
   ## - 'root' login
   ## - Qubes 'root' console.
   if [ "$(id -un)" != 'sysmaint' ]; then
-    printf '%s\n' \
-      "ERROR: 'upgrade-nonroot' cannot be used by accounts other than" \
-      "'sysmaint' (or 'root') on this system. For more information, see" \
-      "https://www.kicksecure.com/wiki/Sysmaint" >&2
+    printf '%s\n' "\
+ERROR: 'upgrade-nonroot' cannot be used by accounts other than
+'sysmaint' (or 'root') on this system. For more information, see
+https://www.kicksecure.com/wiki/Sysmaint" >&2
     exit 1
   fi
 fi

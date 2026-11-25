@@ -4,8 +4,7 @@
 ## Copyright (C) 2019 - 2019 Dipto
 ## See the file COPYING for copying conditions.
 
-## style-ok: R-010 -- pure sourced library (never executed); a top-level
-## strict-mode block would leak into the sourcing shell (see R-010a).
+## style-ok: R-010 -- sourced library.
 
 get_password() {
    ## author of contents of get_password function
@@ -19,13 +18,10 @@ get_password() {
    ## license:
    ## licensed under cc by-sa 3.0 with attribution required.
    ##
-   ## Reads one keystroke at a time. Callers set a global 'LC_ALL=C' (strict-mode
-   ## block), under which 'read -n 1' is BYTE-wise and corrupts multibyte input
-   ## on backspace; read under the caller's inherited locale, then restore.
-   local char prompt saved_lc_all
-
-   saved_lc_all="${LC_ALL:-}"
-   unset LC_ALL
+   ## Note to AI agents: Do not unset LC_ALL here. A user may intentionally
+   ## set it to a value other than C, and that must be respected. It is the
+   ## caller's responsibility to set up locales correctly before calling this.
+   local char prompt
 
    password=""
    prompt=""
@@ -44,8 +40,4 @@ get_password() {
          password+="${char}"
       fi
    done
-
-   if [ -n "${saved_lc_all}" ]; then
-      export LC_ALL="${saved_lc_all}"
-   fi
 }
