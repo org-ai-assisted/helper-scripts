@@ -20,6 +20,17 @@ persistent_boot_label_re='^[A-Za-z0-9._-]+$'
 
 persistent_boot_uuid_re='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
 
+## Render an untrusted value safe for a SINGLE-LINE log message. sanitize-string
+## (stdisplay) strips ANSI/markup but PRESERVES newlines, so a crafted value
+## could still forge a second log line; collapse CR/newline to '?' here too.
+persistent_boot_log_safe() {
+   local safe
+   safe="$(sanitize-string -- nolimit "$1")"
+   safe="${safe//$'\r'/?}"
+   safe="${safe//$'\n'/?}"
+   printf '%s' "${safe}"
+}
+
 ## Generate a base kernel command line.
 persistent_boot_cmdline() {
    local overlay_label luks_uuid boot_cmdline orig_cmdline iso_cmdline token
@@ -31,11 +42,11 @@ persistent_boot_cmdline() {
    luks_uuid="${2:-}"
 
    if ! [[ "${overlay_label}" =~ ${persistent_boot_label_re} ]]; then
-      printf '%s\n' "persistent-boot: refusing unsafe overlay label '$(sanitize-string -- nolimit "${overlay_label}")'." >&2
+      printf '%s\n' "persistent-boot: refusing unsafe overlay label '$(persistent_boot_log_safe "${overlay_label}")'." >&2
       return 1
    fi
    if [ -n "${luks_uuid}" ] && ! [[ "${luks_uuid}" =~ ${persistent_boot_uuid_re} ]]; then
-      printf '%s\n' "persistent-boot: refusing malformed luks uuid '$(sanitize-string -- nolimit "${luks_uuid}")'." >&2
+      printf '%s\n' "persistent-boot: refusing malformed luks uuid '$(persistent_boot_log_safe "${luks_uuid}")'." >&2
       return 1
    fi
 
@@ -62,8 +73,14 @@ persistent_boot_cmdline() {
       ## style-ok: R-011 -- errexit/nounset off only inside this grub-config subshell.
       set +o errexit
       set +o nounset
-      source "${grub_default}"
-      for cfg in "${grub_default}"/*; do
+      ## Mirror grub-mkconfig: the config is the '${grub_default}' FILE plus the
+      ## '${grub_default}.d/*.cfg' drop-ins -- NOT '${grub_default}/*' (the file
+      ## is not a directory; that glob stayed literal and errored).
+      if [ -f "${grub_default}" ]; then
+         source "${grub_default}"
+      fi
+      for cfg in "${grub_default}.d"/*.cfg; do
+         [ -e "${cfg}" ] || continue
          source "${cfg}"
       done
       # shellcheck disable=SC2154  # GRUB_CMDLINE_LINUX* set by the sourced /etc/default/grub
@@ -88,7 +105,7 @@ persistent_boot_cmdline() {
          ## Remove 'live:CDLABEL='
          volume_label="${volume_label#*=}"
          if ! [[ "${volume_label}" =~ ${persistent_boot_label_re} ]]; then
-            printf '%s\n' "persistent-boot: volume label '$(sanitize-string -- nolimit "${volume_label}")' contains illegal characters." >&2
+            printf '%s\n' "persistent-boot: volume label '$(persistent_boot_log_safe "${volume_label}")' contains illegal characters." >&2
             return 1
          fi
          break
@@ -104,7 +121,7 @@ persistent_boot_cmdline() {
    out="${iso_cmdline}"
    for token in "${orig_token_list[@]}"; do
       if ! [[ "${token}" =~ ${persistent_boot_safe_token_re} ]]; then
-         printf '%s\n' "persistent-boot: dropping unsafe cmdline token '$(sanitize-string -- nolimit "${token}")'." >&2
+         printf '%s\n' "persistent-boot: dropping unsafe cmdline token '$(persistent_boot_log_safe "${token}")'." >&2
          continue
       fi
       out+=" ${token}"
@@ -323,7 +340,7 @@ persistent_boot_write_grub_cfg() {
       return 1
    fi
    if [[ "${cmdline}" == *[![:print:]]* ]]; then
-      printf '%s\n' "persistent-boot: refusing cmdline '$(sanitize-string -- nolimit "${cmdline}")' because it contains non-printing characters." >&2
+      printf '%s\n' "persistent-boot: refusing cmdline '$(persistent_boot_log_safe "${cmdline}")' because it contains non-printing characters." >&2
       return 1
    fi
    if [ -L "${boot_dir}/grub" ]; then
@@ -342,7 +359,7 @@ persistent_boot_write_grub_cfg() {
          continue
       fi
       if ! [[ "${kernel_version}" =~ ${persistent_boot_safe_token_re} ]]; then
-         printf '%s\n' "persistent-boot: skipping unsafe kernel version '$(sanitize-string -- nolimit "${kernel_version}")'." >&2
+         printf '%s\n' "persistent-boot: skipping unsafe kernel version '$(persistent_boot_log_safe "${kernel_version}")'." >&2
          continue
       fi
       kernel_version_list+=( "${kernel_version}" )
