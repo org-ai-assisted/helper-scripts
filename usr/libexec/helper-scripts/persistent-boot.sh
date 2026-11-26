@@ -25,7 +25,7 @@ persistent_boot_uuid_re='^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$'
 ## could still forge a second log line; collapse CR/newline to '?' here too.
 persistent_boot_log_safe() {
    local safe
-   safe="$(sanitize-string -- nolimit "$1")"
+   safe="$("${HELPER_SCRIPTS_PATH:-}"/usr/bin/sanitize-string -- nolimit "$1")"
    safe="${safe//$'\r'/?}"
    safe="${safe//$'\n'/?}"
    printf '%s' "${safe}"
