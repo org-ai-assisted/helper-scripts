@@ -11,8 +11,9 @@
 
 ## NOTE: Must not include bashisms!
 
-## NOTE: Fully installed packages only!
-##       'dpkg-query' output 'install ok installed' only.
+## NOTE: Fully installed packages only (third field 'installed'). The want
+##       field may be 'install' or 'hold' -- a held package IS installed
+##       (apt-mark hold only pins the version), so both count as installed.
 
 ## NOTE: code duplication: Function pkg_installed is duplicated elsewhere in derivative-maker source code.
 
@@ -32,8 +33,10 @@ pkg_installed() {
    error_flag=$(printf '%s' "${dpkg_query_output}" | awk '{print $2}')
    status=$(printf '%s' "${dpkg_query_output}" | awk '{print $3}')
 
-   if ! [ "${want}" = 'install' ]; then
-      true "$0: INFO: package '${package_name}' want '${want}' is not 'install'."
+   ## A held package ('hold ok installed') is installed; apt-mark hold only
+   ## pins its version. Accept 'hold' alongside 'install'.
+   if [ "${want}" != 'install' ] && [ "${want}" != 'hold' ]; then
+      true "$0: INFO: package '${package_name}' want '${want}' is neither 'install' nor 'hold'."
       return 1
    fi
    if ! [ "${error_flag}" = 'ok' ]; then
