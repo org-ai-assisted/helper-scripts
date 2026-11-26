@@ -38,7 +38,8 @@ derivative_sbom_identity() {
 ## Creates a serial UUID for the SBOM. Args: <name> <version> <arch>
 ## <timestamp>.
 derivative_sbom_serial() {
-   uuidgen --sha1 --namespace @url --name "sbom:${1}:${2}:${3}:${4}"
+   "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/sbom-serial \
+      "sbom:${1}:${2}:${3}:${4}"
 }
 
 ## True if the fragments directory contains at least one '*.cdx.json' file.
