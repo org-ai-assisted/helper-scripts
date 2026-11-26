@@ -19,8 +19,31 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 # shellcheck source=./light_sleep.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/light_sleep.bsh
 
+## Wait up to ~180s for systemd to finish starting, so a consumer does not run
+## privileged commands before the system is ready (e.g. before a slow boot-time
+## unlock has restored sudo/pkexec). Returns 0 as soon as the sanctioned
+## readiness action 'leaprun system-ready-check' reports 'running' or
+## 'degraded'; best-effort (returns 0 on timeout too) so the consumer's own gate
+## stays authoritative. Override the ceiling with system_ready_wait_max_seconds,
+## the per-probe bound with system_ready_probe_timeout.
+##
+## Design notes -- each guards a real failure mode:
+##  - Cap on MONOTONIC elapsed time from /proc/uptime, never an iteration count:
+##    'leaprun system-ready-check' (= 'timeout 5 systemctl --wait
+##    is-system-running') blocks while the system starts but returns fast on
+##    failure, so an iteration cap plus a per-iteration sleep collapses the wait
+##    far below the ceiling on a fast-failing probe. /proc/uptime is also immune
+##    to a boot-time clock step (sdwdate / NTP) that would skew a wall clock.
+##    (Not 'SECONDS': clock-based, and -- as a sourced helper -- it would clobber
+##    the caller's timer.)
+##  - Each probe is bounded by 'timeout', capped to the budget LEFT on the
+##    ceiling, so a hung leaprun / half-up privleapd cannot push the total past
+##    the ceiling by more than the kill grace plus one sleep.
+##  - Readiness matches a whole output LINE: system-ready-check merges
+##    systemctl's stderr into stdout, so a warning line can precede the state.
 try_wait_for_system_ready() {
-   local max_seconds wait_msg_printed counter system_ready_result
+   local max_seconds probe_timeout now_uptime deadline printed
+   local system_ready_result line found remaining probe_this
 
    max_seconds="${system_ready_wait_max_seconds:-180}"
    if [ -z "${max_seconds}" ] \
@@ -29,19 +52,48 @@ try_wait_for_system_ready() {
       || [ "${max_seconds}" -gt 99999 ]; then
       max_seconds='180'
    fi
-   wait_msg_printed='false'
 
-   for (( counter = 0; counter < ${max_seconds}; counter++ )); do
-      system_ready_result="$(systemctl is-system-running || true)"
-      if [[ "${system_ready_result}" =~ ^(running|degraded)$ ]]; then
+   probe_timeout="${system_ready_probe_timeout:-10}"
+   if [ -z "${probe_timeout}" ] \
+      || ! is_whole_number_int64 "${probe_timeout}" \
+      || [ "${probe_timeout}" -lt 1 ] \
+      || [ "${probe_timeout}" -gt 99999 ]; then
+      probe_timeout='10'
+   fi
+
+   read -r now_uptime _ < /proc/uptime
+   now_uptime="${now_uptime%%.*}"
+   deadline=$(( now_uptime + max_seconds ))
+   printed='no'
+
+   while [ "${now_uptime}" -lt "${deadline}" ]; do
+      remaining=$(( deadline - now_uptime ))
+      probe_this="${probe_timeout}"
+      if [ "${probe_this}" -gt "${remaining}" ]; then
+         probe_this="${remaining}"
+      fi
+      system_ready_result="$(timeout --kill-after=3 "${probe_this}" \
+         leaprun system-ready-check 2>/dev/null || true)"
+      found='no'
+      while IFS= read -r line; do
+         case "${line}" in
+            running | degraded)
+               found='yes'
+               break
+               ;;
+         esac
+      done <<< "${system_ready_result}"
+      if [ "${found}" = 'yes' ]; then
          return 0
-      elif [ "${wait_msg_printed}" = 'false' ]; then
+      fi
+      if [ "${printed}" = 'no' ]; then
          printf '%s\n' "$0: waiting for the system to finish starting..."
-         wait_msg_printed='true'
+         printed='yes'
       fi
       light_sleep 1
+      read -r now_uptime _ < /proc/uptime
+      now_uptime="${now_uptime%%.*}"
    done
-
    return 0
 }
 
