@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2012 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
@@ -58,7 +58,7 @@ if [ -z "${kernel_cmdline+x}" ]; then
 fi
 
 if ! [ -v writable_fs_lists_str ]; then
-  writable_fs_lists_str="$(/usr/libexec/helper-scripts/get_writable_fs_lists.sh)"
+  writable_fs_lists_str="$("${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/get_writable_fs_lists.sh)"
 fi
 readarray -t writable_fs_lists <<< "${writable_fs_lists_str}"
 IFS=' ' read -r -a safe_writable_fs_list <<< "${writable_fs_lists[0]:-}"
