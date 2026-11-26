@@ -7,6 +7,9 @@
 
 ## style-ok: R-010 -- sourced library.
 
+# shellcheck source=./live-boot-cmdline.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/live-boot-cmdline.bsh
+
 ## Helpers for managing a writable boot partition for ISO persistent mode.
 
 ## Used to validate if a word can be placed into grub.cfg unquoted.
@@ -54,20 +57,23 @@ persistent_boot_cmdline() {
       printf '%s\n' "persistent-boot: could not read boot kernel command line." >&2
       return 1
    fi
+   local grub_default="${PERSISTENT_BOOT_GRUB_DEFAULT:-/etc/default/grub}"
    orig_cmdline="$(
+      ## style-ok: R-011 -- errexit/nounset off only inside this grub-config subshell.
       set +o errexit
       set +o nounset
-      source /etc/default/grub
-      for cfg in /etc/default/grub/*; do
+      source "${grub_default}"
+      for cfg in "${grub_default}"/*; do
          source "${cfg}"
       done
+      # shellcheck disable=SC2154  # GRUB_CMDLINE_LINUX* set by the sourced /etc/default/grub
       printf '%s' "${GRUB_CMDLINE_LINUX# }${GRUB_CMDLINE_LINUX:+ }${GRUB_CMDLINE_LINUX_DEFAULT# }"
    )"
    if [ -z "${orig_cmdline}" ]; then
       printf '%s\n' "persistent-boot: could not extract base kernel command line." >&2
       return 1
    fi
-   read -r -a boot_token_list <<< "${boot_token}"
+   read -r -a boot_token_list <<< "${boot_cmdline}"
    read -r -a orig_token_list <<< "${orig_cmdline}"
 
    volume_label=''
@@ -93,8 +99,7 @@ persistent_boot_cmdline() {
       return 1
    fi
 
-   ## FIXME: Code duplication with derivative-maker/help-steps/dm-raw-to-iso.
-   iso_cmdline="rd.live.overlay.overlayfs=1 splash rd.live.image root=live:CDLABEL=${volume_label} rd.live.dir=live rd.live.squashimg=filesystem.squashfs iso-scan/filename=\${iso_path}"
+   iso_cmdline="$(live_boot_base_iso_cmdline "${volume_label}")"
 
    out="${iso_cmdline}"
    for token in "${orig_token_list[@]}"; do

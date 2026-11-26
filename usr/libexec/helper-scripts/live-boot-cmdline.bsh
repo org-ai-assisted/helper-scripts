@@ -1,0 +1,22 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## style-ok: R-010 -- sourced library.
+## style-ok: R-003 -- matches 3-space helper-scripts siblings.
+
+## Base dracut live-boot kernel command line, shared by the ISO builder
+## (derivative-maker help-steps/dm-raw-to-iso) and the persistent-boot writer,
+## so the two cannot drift.
+##
+## $1 = volume label (CDLABEL).
+## 'iso-scan/filename=${iso_path}' is emitted LITERALLY for GRUB to expand at
+## boot time; callers must not expand it themselves.
+live_boot_base_iso_cmdline() {
+   local volume_label
+   volume_label="$1"
+   printf '%s' "rd.live.overlay.overlayfs=1 splash rd.live.image root=live:CDLABEL=${volume_label} rd.live.dir=live rd.live.squashimg=filesystem.squashfs iso-scan/filename=\${iso_path}"
+}
