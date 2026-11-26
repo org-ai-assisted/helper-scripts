@@ -208,6 +208,64 @@ def seed_tree(
             )
 
 
+def root_bom_ref(base: dict[str, CDX_TYPE]) -> str | None:
+    """
+    Return the 'bom-ref' of the base SBOM's root component
+    (metadata.component), or None if there is no referenceable root. A
+    component with no 'bom-ref' cannot anchor a CycloneDX dependency graph.
+    """
+
+    metadata: CDX_TYPE = base.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    component: CDX_TYPE = metadata.get("component")
+    if not isinstance(component, dict):
+        return None
+    return str_field(component, "bom-ref")
+
+
+def wire_root_dependencies(
+    base: dict[str, CDX_TYPE], root_ref: str, new_refs: list[str]
+) -> None:
+    """
+    Add each bom-ref in new_refs to the 'dependsOn' of the root component's
+    entry in base['dependencies'], deduplicated and order-preserving. Create
+    the 'dependencies' array and/or the root entry if absent. Terminates the
+    program if an existing structure has the wrong JSON type.
+    """
+
+    dependency_list: CDX_TYPE = base.get("dependencies")
+    if dependency_list is None:
+        dependency_list = []
+        base["dependencies"] = dependency_list
+    if not isinstance(dependency_list, list):
+        die("base SBOM 'dependencies' is not a JSON array")
+
+    root_entry: dict[str, CDX_TYPE] | None = None
+    for entry in dependency_list:
+        if not isinstance(entry, dict):
+            die("base SBOM 'dependencies' entry is not a JSON object")
+        if str_field(entry, "ref") == root_ref:
+            root_entry = entry
+            break
+    if root_entry is None:
+        root_entry = {"ref": root_ref, "dependsOn": []}
+        dependency_list.append(root_entry)
+
+    depends_on: CDX_TYPE = root_entry.get("dependsOn")
+    if depends_on is None:
+        depends_on = []
+        root_entry["dependsOn"] = depends_on
+    if not isinstance(depends_on, list):
+        die("base SBOM root component 'dependsOn' is not a JSON array")
+
+    existing: set[str] = {ref for ref in depends_on if isinstance(ref, str)}
+    for ref in new_refs:
+        if ref not in existing:
+            depends_on.append(ref)
+            existing.add(ref)
+
+
 # pylint: disable=too-many-locals, too-many-branches
 def main() -> NoReturn:
     """
@@ -263,6 +321,8 @@ def main() -> NoReturn:
     for component in component_list:
         seed_tree(component, "base SBOM", purl_set, ref_set, hash_set)
 
+    fragment_root_refs: list[str] = []
+    seen_fragment_refs: set[str] = set()
     for name in fragment_name_list:
         fragment_path: Path = Path(fragments_dir, name)
         try:
@@ -279,6 +339,15 @@ def main() -> NoReturn:
         )
         if not isinstance(fragment_data, dict):
             die(f"'{fragment_path}': not a JSON object")
+        ## Merging an integrated SBOM's own dependency graph is out of scope
+        ## (no fragment producer emits one). Refuse rather than silently drop
+        ## the data it would carry.
+        fragment_dependencies: CDX_TYPE = fragment_data.get("dependencies")
+        if isinstance(fragment_dependencies, list) and fragment_dependencies:
+            die(
+                f"'{fragment_path}': merging integrated SBOM dependency "
+                + "graphs is unsupported"
+            )
         for component in components_from_fragment(
             fragment_path, fragment_data
         ):
@@ -290,10 +359,22 @@ def main() -> NoReturn:
                 hash_set,
             )
             component_list.append(component)
+            ## Wire each top-level fragment component into the root's
+            ## dependency graph. A component without a 'bom-ref' cannot be
+            ## referenced, so it stays in components[] but out of the graph.
+            component_ref: str | None = str_field(component, "bom-ref")
+            if component_ref is not None and component_ref not in (
+                seen_fragment_refs
+            ):
+                fragment_root_refs.append(component_ref)
+                seen_fragment_refs.add(component_ref)
 
-    ## FIXME: Dependency merging isn't done at all. We should be merging
-    ## in dependency info from integrated SBOMs and adding components listed
-    ## in those SBOMs to the list of dependencies for the root component.
+    ## The root component (metadata.component) is the subject of the SBOM.
+    ## Record that it depends on the integrated fragment components so they
+    ## are reachable in the dependency graph, not orphaned in components[].
+    root_ref: str | None = root_bom_ref(base)
+    if root_ref is not None and fragment_root_refs:
+        wire_root_dependencies(base, root_ref, fragment_root_refs)
 
     output = json.dumps(base, indent=2, ensure_ascii=False) + "\n"
     sys.stdout.write(output)
