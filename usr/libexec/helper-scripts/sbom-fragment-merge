@@ -172,42 +172,6 @@ def register_tree(
         )
 
 
-## TODO: This optimization function is a bit risky, is the performance so bad
-## without it that we need it?
-def seed_tree(
-    component: CDX_TYPE,
-    location_str: str,
-    purl_set: set[str],
-    ref_set: set[str],
-    hash_set: set[str],
-) -> None:
-    """
-    Same as register_tree, but skips almost all validation for the sake of
-    speed. Only known-good components should be passed here.
-    """
-
-    if not isinstance(component, dict):
-        die(f"{location_str}: component is not a JSON object")
-    key: str = content_key(component)
-    purl: str | None = str_field(component, "purl")
-    ref: str | None = str_field(component, "bom-ref")
-    if ref is not None:
-        ref_set.add(ref)
-    if purl is not None:
-        purl_set.add(purl)
-    hash_set.add(key)
-    nested_component_list: CDX_TYPE = component.get("components")
-    if isinstance(nested_component_list, list):
-        for child in nested_component_list:
-            seed_tree(
-                child,
-                f"{location_str} (nested_component)",
-                purl_set,
-                ref_set,
-                hash_set,
-            )
-
-
 def root_bom_ref(base: dict[str, CDX_TYPE]) -> str | None:
     """
     Return the 'bom-ref' of the base SBOM's root component
@@ -313,13 +277,20 @@ def main() -> NoReturn:
     purl_set: set[str] = set()
     ref_set: set[str] = set()
     hash_set: set[str] = set()
+    ## Seed the duplicate-detection state from the base on the SAME validating
+    ## footing as fragments (register_tree): an internally-inconsistent base
+    ## (duplicate purl/bom-ref) is by definition not mergeable and must fail
+    ## closed, not pass silently. The hash of every component is computed either
+    ## way, so validating here costs nothing measurable.
     metadata: CDX_TYPE = base.get("metadata")
-    if isinstance(metadata, dict):
-        seed_tree(
-            metadata.get("component"), "base SBOM", purl_set, ref_set, hash_set
+    if isinstance(metadata, dict) and isinstance(
+        metadata.get("component"), dict
+    ):
+        register_tree(
+            metadata["component"], "base SBOM", purl_set, ref_set, hash_set
         )
     for component in component_list:
-        seed_tree(component, "base SBOM", purl_set, ref_set, hash_set)
+        register_tree(component, "base SBOM", purl_set, ref_set, hash_set)
 
     fragment_root_refs: list[str] = []
     seen_fragment_refs: set[str] = set()
