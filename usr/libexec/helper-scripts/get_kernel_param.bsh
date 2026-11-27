@@ -1,0 +1,47 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Reads the kernel command line and parses variables from it.
+
+## style-ok: no-strict - sourced library.
+
+get_kernel_param_kernel_cmdline=""
+
+read_kernel_cmdline() {
+  if [ -n "${get_kernel_param_kernel_cmdline}" ]; then
+    return 0
+  fi
+  if [ -r /proc/cmdline ]; then
+    read -r get_kernel_param_kernel_cmdline < /proc/cmdline || return 1
+  elif [ -r /proc/1/cmdline ]; then
+    read -r get_kernel_param_kernel_cmdline < <(tr '\0' ' ' < /proc/1/cmdline) || return 1
+  else
+    return 1
+  fi
+}
+
+get_kernel_param() {
+  local param
+
+  param="${1:-}"
+  [ -n "${param}" ] || return 1
+
+  if [ -z "${get_kernel_param_kernel_cmdline}" ]; then
+    read_kernel_cmdline || return 1
+  fi
+
+  if [[ "${get_kernel_param_kernel_cmdline}" \
+    =~ (^| )"${param}"(=([^ ]*)?)?($| ) ]]; then
+    if [ -n "${BASH_REMATCH[3]:-}" ]; then
+      printf '%s\n' "${BASH_REMATCH[3]}"
+    elif [ -n "${BASH_REMATCH[2]:-}" ]; then
+      printf '%s\n' "GKP_SET_BLANK"
+    else
+      printf '%s\n' "GKP_PRESENT"
+    fi
+  else
+    printf '%s\n' "GKP_ABSENT"
+  fi
+}
