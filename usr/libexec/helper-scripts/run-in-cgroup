@@ -9,10 +9,21 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+## This is a wrapper: capture the caller's LC_ALL state BEFORE forcing C, so the
+## wrapped command runs under the caller's locale rather than our parsing one.
+if [ -v LC_ALL ]; then
+  run_in_cgroup_caller_lc_all="${LC_ALL}"
+  run_in_cgroup_caller_lc_all_was_set='true'
+else
+  run_in_cgroup_caller_lc_all=''
+  run_in_cgroup_caller_lc_all_was_set='false'
+fi
 export LC_ALL=C
 
 ## shellcheck source=../../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
+## shellcheck source=./strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
 run_in_cgroup() {
   local do_detach cgroup_root cgroup_name random_uuid_file cgroup_path \
@@ -42,6 +53,18 @@ run_in_cgroup() {
         ;;
     esac
   done
+
+  ## A caller-supplied cgroup name must be a safe single path component. Reuse
+  ## helper-scripts' validate_safe_filename (rejects '', '/', '..', control
+  ## chars, leading '-', ...) rather than reinventing the check. Without it,
+  ## '--cgroup-name ../../..' makes cgroup_path escape /sys/fs/cgroup, so the
+  ## cgroup.procs write below would truncate an arbitrary (root-owned) file.
+  if [ "${cgroup_name_option_used}" = 'true' ]; then
+    if ! validate_safe_filename cgroup_name ; then
+      log error "Invalid --cgroup-name '${cgroup_name}': must be a safe single path component!"
+      exit 1
+    fi
+  fi
 
   if [ "$#" = '0' ]; then
     log error "No command specified to run in new cgroup!"
@@ -75,6 +98,7 @@ run_in_cgroup() {
   ##
   ## https://forums.whonix.org/t/constrained-system-resources-program-starter-wrapper/10914
 
+  ## style-ok: lpe-symlink-follow -- cgroup_name is validated above to a single path component (no '', '.', '..', '/'), so cgroup_path cannot escape root-owned /sys/fs/cgroup; cgroup.procs is a kernel cgroupfs control file, not symlinkable. Regression: run_in_cgroup_name_validation_test.
   if ! printf '%s\n' "$$" > "${cgroup_path}/cgroup.procs"; then
     log error "Cannot add parent process to cgroup '${cgroup_name}'!"
     rmdir -- "${cgroup_path}" \
@@ -91,6 +115,14 @@ run_in_cgroup() {
   ## caller knows the name, the caller knows the path.
   if [ "${cgroup_name_option_used}" != 'true' ]; then
     printf '%s\n' "${cgroup_path}"
+  fi
+
+  ## Restore the caller's locale for the wrapped command: LC_ALL=C was for this
+  ## wrapper's own parsing only and must not leak into the wrapped process.
+  if [ "${run_in_cgroup_caller_lc_all_was_set}" = 'true' ]; then
+    export LC_ALL="${run_in_cgroup_caller_lc_all}"
+  else
+    unset LC_ALL
   fi
 
   if [ "${do_detach}" = 'true' ]; then
