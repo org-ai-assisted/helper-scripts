@@ -124,6 +124,17 @@ persistent_boot_cmdline() {
          printf '%s\n' "persistent-boot: dropping unsafe cmdline token '$(persistent_boot_log_safe "${token}")'." >&2
          continue
       fi
+      ## The overlay label and the optional LUKS uuid are re-added canonically
+      ## below; rd.live.overlay.reset=1 is DESTRUCTIVE and must ride ONLY the
+      ## confirmation-wrapped RESET entry. Drop any copy arriving from the base
+      ## config so a plain USER/SYSMAINT entry can never silently reset the
+      ## persistent overlay on a normal boot, nor carry a stale/duplicate
+      ## overlay or luks token. (rd.live.overlay.overlayfs is NOT matched here.)
+      case "${token}" in
+         rd.live.overlay.reset | rd.live.overlay.reset=* | rd.live.overlay=* | rd.luks.uuid=*)
+            continue
+            ;;
+      esac
       out+=" ${token}"
    done
    out+=" rd.live.overlay=LABEL=${overlay_label}:/live/overlay"
@@ -382,7 +393,12 @@ persistent_boot_write_grub_cfg() {
      'PERSISTENT Mode | SYSMAINT Session!boot-role=sysmaint systemd.unit=sysmaint-boot.target!false'
      'RESET persistent overlay!rd.live.overlay.reset=1!true'
    )
-   {
+   ## A failed write (e.g. ENOSPC) must not rename a truncated file over a
+   ## still-valid grub.cfg. The disk stays full, so the final write also fails
+   ## and the group returns nonzero. Rename only after the writes succeed;
+   ## remove the temp file on failure. (errexit is deliberately NOT used inside:
+   ## bash suppresses it in a subshell evaluated as an if-condition.)
+   if ! {
       printf '%s\n' '## AUTO-GENERATED, do not edit.'
       printf '%s\n' 'set default=0'
       printf '%s\n' 'set timeout=5'
@@ -432,6 +448,12 @@ persistent_boot_write_grub_cfg() {
          printf '%s\n' "  }"
       done
       printf '%s\n' '}'
-   } > "${temp_config_file}"
-   mv --force --no-target-directory -- "${temp_config_file}" "${target_config_file}"
+   } > "${temp_config_file}"; then
+      safe-rm --force -- "${temp_config_file}" 2>/dev/null || true
+      return 1
+   fi
+   if ! mv --force --no-target-directory -- "${temp_config_file}" "${target_config_file}"; then
+      safe-rm --force -- "${temp_config_file}" 2>/dev/null || true
+      return 1
+   fi
 }
