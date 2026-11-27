@@ -69,7 +69,10 @@ br_add_to_file() {
   ## the destination instead of following it, so root never writes through an
   ## attacker's link -- the bash-reachable equivalent of O_NOFOLLOW, no helper
   ## binary, safe for ANY caller regardless of the destination directory.
-  br_tmp="$(mktemp -- "${file_name}.br.XXXXXX")"
+  ## The temp basename is SHORT and independent of the input basename: a template
+  ## built from "${file_name}" overflows NAME_MAX (mktemp fails) for a long but
+  ## otherwise valid input basename.
+  br_tmp="$(mktemp -- "$(dirname -- "${file_name}")/.br.XXXXXX")"
   while IFS= read -r line || [ -n "${line}" ]; do
     printf '%s\n' "${line}<br />"
   done <"${file_name}" >"${br_tmp}"
