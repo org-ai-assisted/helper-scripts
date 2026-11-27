@@ -40,6 +40,10 @@ get_kernel_param() {
     read_kernel_cmdline || return 1
   fi
 
+  ## Boundaries are whitespace only. Kicksecure/Whonix kernel parameters are
+  ## quote-free key=value tokens, so a quoted value containing spaces (e.g.
+  ## note="a mode=wrong b") does not occur. Do NOT add quote-aware tokenizing
+  ## here: it would reinvent a shell parser for input that never arises.
   if [[ "${get_kernel_param_kernel_cmdline}" \
     =~ (^| )"${param}"(=([^ ]*)?)?($| ) ]]; then
     if [ -n "${BASH_REMATCH[3]:-}" ]; then

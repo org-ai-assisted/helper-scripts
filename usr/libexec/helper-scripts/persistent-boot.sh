@@ -119,6 +119,10 @@ persistent_boot_cmdline() {
    iso_cmdline="$(live_boot_base_iso_cmdline "${volume_label}")"
 
    out="${iso_cmdline}"
+   ## Base tokens are whitespace-split. GRUB_CMDLINE hardening options are
+   ## quote-free, so a quoted value with spaces does not occur; do NOT add
+   ## quote-aware re-tokenizing (it reinvents a shell parser). A token bearing
+   ## an unsafe char -- including a stray quote fragment -- is dropped whole.
    for token in "${orig_token_list[@]}"; do
       if ! [[ "${token}" =~ ${persistent_boot_safe_token_re} ]]; then
          printf '%s\n' "persistent-boot: dropping unsafe cmdline token '$(persistent_boot_log_safe "${token}")'." >&2
