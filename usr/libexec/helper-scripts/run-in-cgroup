@@ -75,7 +75,6 @@ run_in_cgroup() {
   ##
   ## https://forums.whonix.org/t/constrained-system-resources-program-starter-wrapper/10914
 
-  ## style-ok: lpe-symlink-follow -- cgroup.procs is a kernel cgroupfs control file under root-owned /sys/fs/cgroup; not symlinkable.
   if ! printf '%s\n' "$$" > "${cgroup_path}/cgroup.procs"; then
     log error "Cannot add parent process to cgroup '${cgroup_name}'!"
     rmdir -- "${cgroup_path}" \
