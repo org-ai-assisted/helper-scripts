@@ -70,6 +70,7 @@ repair_torrc_create_authdir() {
   local authdir
   authdir="$1"
   mkdir --parents -- "${authdir%/*}"
+  ## style-ok: lpe-symlink-follow,lpe-root-write-user-path -- /var/lib/tor root-owned; parents umask-honored then install -d atomic 0700.
   install -d -m 0700 -- "${authdir}"
 }
 

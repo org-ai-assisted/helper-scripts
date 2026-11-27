@@ -75,6 +75,7 @@ flocker_path_substituted="${flocker_path_substituted//./_dot_}"
 flocker_lockfile="${flocker_temp_folder}/${flocker_path_substituted}"
 
 if ! test -f "${flocker_lockfile}"; then
+  ## style-ok: lpe-symlink-follow -- lockfile under /run/user/${EUID} (0700, per-uid; root uses /run/user/0); no cross-user symlink plant.
   touch -- "${flocker_lockfile}"
 fi
 
