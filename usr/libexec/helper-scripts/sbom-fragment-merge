@@ -230,6 +230,42 @@ def wire_root_dependencies(
             existing.add(ref)
 
 
+def register_service_refs(
+    services: CDX_TYPE,
+    location_str: str,
+    ref_set: set[str],
+) -> None:
+    """
+    Reserve the 'bom-ref' of every service (and nested service) in the base.
+
+    Services are preserved verbatim in the output, so a fragment component that
+    reused a base service's 'bom-ref' would produce two objects sharing one
+    reference and violate BOM-wide 'bom-ref' uniqueness. Registering the service
+    references here makes that collision fail closed. Only references are
+    reserved (services carry no purl/hash); services themselves are untouched.
+    """
+
+    if services is None:
+        return
+    if not isinstance(services, list):
+        die(f"{location_str}: 'services' is not a JSON array")
+    for service in services:
+        if not isinstance(service, dict):
+            die(f"{location_str}: service is not a JSON object")
+        ref: str | None = str_field(service, "bom-ref")
+        if ref is not None:
+            if ref in ref_set:
+                die(
+                    f"{location_str}: bom-ref '{ref}' is defined more than once"
+                )
+            ref_set.add(ref)
+        register_service_refs(
+            service.get("services"),
+            f"{location_str} (nested_service)",
+            ref_set,
+        )
+
+
 # pylint: disable=too-many-locals, too-many-branches
 def main() -> NoReturn:
     """
@@ -241,6 +277,7 @@ def main() -> NoReturn:
             "usage: <base-sbom-producer> | sbom-fragment-merge FRAGMENTS_DIR",
             file=sys.stderr,
         )
+        sys.exit(1)
     fragments_dir: Path = Path(sys.argv[1])
 
     if not fragments_dir.is_dir():
@@ -291,6 +328,9 @@ def main() -> NoReturn:
         )
     for component in component_list:
         register_tree(component, "base SBOM", purl_set, ref_set, hash_set)
+    ## Base services are passed through unchanged; reserve their references too so
+    ## a fragment cannot reuse one and break BOM-wide 'bom-ref' uniqueness.
+    register_service_refs(base.get("services"), "base SBOM", ref_set)
 
     fragment_root_refs: list[str] = []
     seen_fragment_refs: set[str] = set()
