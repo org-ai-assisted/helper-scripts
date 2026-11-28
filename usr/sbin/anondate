@@ -276,8 +276,10 @@ tor_cert_lifetime_valid() {
    ## from" date, which is the peer's TLS link-cert notBefore. Tor never post-dates
    ## notBefore ("Don't actually start in the future!", tor src/lib/tls/x509.c), so
    ## it is at or before real now for honestly-clocked peers; anondate-set is
-   ## forward-only + minimum-time floored and fires at most once per boot. So the
-   ## clock can only move forward toward, never past, real time.
+   ## forward-only + minimum-time floored, and sets the clock from a cert lifetime
+   ## at most once per boot (the tor_certificate_lifetime_set stamp; the consensus
+   ## path is not so guarded). So the clock can only move forward toward, never
+   ## past, real time.
 
    ## Example Tor log:
    ## Sep 03 10:32:59.000 [warn] Certificate already expired. Either their clock is set wrong, or your clock is wrong.
