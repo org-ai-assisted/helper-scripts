@@ -88,9 +88,9 @@ if [ "${FLOCKER-}" != "${0}" ]; then
   fi
 
   if test -o xtrace; then
-    ## Code duplication. Also in xtrace.bsh function shellopts_with_xtrace.
-    ## This helper intentionally avoids sourcing dependencies.
-    ## TODO: Do we need to avoid sourcing dependencies?
+    ## REMINDER: mirrors xtrace.bsh's shellopts_with_xtrace, duplicated on
+    ## purpose so lockfile stays dependency-free (it runs before/without the
+    ## sourced helpers). Drift risk: keep the two copies in sync.
     case ":${SHELLOPTS-}:" in
       *:xtrace:*)
         flocker_shellopts="${SHELLOPTS-}"

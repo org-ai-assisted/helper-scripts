@@ -23,9 +23,6 @@ bootstrap_status = controller.get_info("status/bootstrap-phase")
 ## Possible answer, when done:
 ## 250-status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100 TAG=done SUMMARY="Done"
 
-## TODO: parse the messages above.
-## 0
-
 print(format(bootstrap_status))
 
 progress_percent = re.match('.* PROGRESS=([0-9]+).*', bootstrap_status)

@@ -6,8 +6,6 @@
 ## style-ok: no-strict -- sourced library; a top-level strict-mode block
 ## would leak 'set -o errexit'/'nounset' into the sourcing shell.
 
-## TODO: how to handle installer specific code?
-
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/ip_syntax.sh

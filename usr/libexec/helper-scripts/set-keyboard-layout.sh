@@ -1094,9 +1094,7 @@ Type 'exit' to quit without changing keyboard layout settings.
       ## 'timeout' is not compatible with the pager and '--no-pager' is unwanted.
       #"${timeout_command[@]}" localectl --no-pager list-x11-keymap-layouts
       localectl-static list-x11-keymap-layouts
-      ## TODO: Minor. Replace above using 'pager' or similar?
-      #printf '%s\n' "${localectl_kb_layouts}" | pager
-      ##       localectl's default pager is better. It does not clear output of this script.
+      ## No pager here: localectl's default pager is better and does not clear this script's output.
       continue
     fi
     if [ "${layout_str}" = 'help' ]; then

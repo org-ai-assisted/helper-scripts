@@ -3,7 +3,7 @@
 ## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
-## TODO: This script exists mainly so that DKMS modules can be signed as part
+## REMINDER: This script exists mainly so that DKMS modules can be signed as part
 ## of the rebuild process. The rebuild is redundant however, it would be much
 ## more efficient if we could just sign the modules. Adjust this script so that
 ## it signs only. Try to also add functionality that will sign VirtualBox

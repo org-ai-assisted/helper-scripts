@@ -35,7 +35,9 @@ def find_backing_items(path):
 
     path_obj = Path(path)
 
-    ## TODO: Good idea?
+    ## AUDIT: should the input path be symlink-resolved before backing-device
+    ## detection? A blanket resolve() could change which device a symlinked path
+    ## maps to; /dev/mapper is already resolved explicitly below.
     #path_obj = path_obj.resolve()
     #path = str(path_obj)
 
