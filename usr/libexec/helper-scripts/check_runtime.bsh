@@ -19,7 +19,7 @@
 was_executed() {
   local caller_bash_source_zero="${1}"
   if [[ "${caller_bash_source_zero}" == "${0}" ]] \
-    || [[ "${caller_bash_source_zero}" == "$(command -v "${0}")" ]]; then
+    || [[ "${caller_bash_source_zero}" == "$(command -v -- "${0}")" ]]; then
     return 0
   fi
   return 1
@@ -28,7 +28,7 @@ was_executed() {
 was_sourced() {
   local caller_bash_source_zero="${1}"
   if [[ "${caller_bash_source_zero}" != "${0}" ]] \
-    && [[ "${caller_bash_source_zero}" != "$(command -v "${0}")" ]]; then
+    && [[ "${caller_bash_source_zero}" != "$(command -v -- "${0}")" ]]; then
     return 0
   fi
   return 1

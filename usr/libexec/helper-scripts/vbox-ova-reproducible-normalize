@@ -87,9 +87,9 @@ def derive_mac(salt, index):
     ## it a globally-administered unicast address.
     ## Not a security hash: a deterministic function to derive a stable MAC
     ## suffix from the salt. Collision resistance is irrelevant here.
-    ## nosec B303: bandit blacklists the sha1 call by name. This is not a
-    ## security hash -- see the comment above -- and 'usedforsecurity=False'
-    ## already states that to Python/OpenSSL.
+    ## usedforsecurity=False (above) states the non-security intent; apt
+    ## bandit 1.6.2 ignores it and gates the sha1 call by name (B303), so
+    ## waive this non-security digest at the call site.
     digest = hashlib.sha1(  # nosec B303
         ("%s:mac:%d" % (salt, index)).encode(), usedforsecurity=False
     ).hexdigest()
@@ -101,8 +101,8 @@ def derive_cid(salt, role, index):
     ## 0xffffffff sentinel (VMDK "no parent" / null CID).
     ## Not a security hash: a deterministic function to derive a stable content
     ## id from the salt. Collision resistance is irrelevant here.
-    ## nosec B303: as above -- deterministic id derivation, not a security
-    ## hash, and already marked 'usedforsecurity=False'.
+    ## As above: non-security (usedforsecurity=False); 1.6.2 gates the sha1
+    ## call by name (B303) regardless, so waive at the call site.
     digest = hashlib.sha1(  # nosec B303
         ("%s:%s:%d" % (salt, role, index)).encode(), usedforsecurity=False
     ).hexdigest()
@@ -288,7 +288,10 @@ def rewrite_manifest(mf_path, workdir):
                 out_lines.append(line)
                 continue
             algo_name, member, _ = line_match.groups()
-            digest = hashlib.new(algos[algo_name])
+            ## Recomputes the OVA manifest's own digest (md5/sha1 possible), not
+            ## a security hash. apt bandit 1.6.2's hashlib_new (B324) errors on
+            ## the non-literal arg (logged, exit 0); # nosec B324 silences it.
+            digest = hashlib.new(algos[algo_name])  # nosec B324
             with open(os.path.join(workdir, member), "rb") as member_handle:
                 for chunk in iter(
                     lambda: member_handle.read(1024 * 1024), b""

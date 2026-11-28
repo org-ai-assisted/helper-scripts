@@ -6,29 +6,29 @@
 
 """Safely print stdin to stdout and file."""
 
+import sys
 from contextlib import ExitStack
-from sys import argv, stdin, stdout
 from typing import TextIO
 from stdisplay.stdisplay import stdisplay
 
 
 def main() -> None:
     """Safely print stdin to stdout and file."""
-    stdout.reconfigure(  # type: ignore
+    sys.stdout.reconfigure(  # type: ignore
         encoding="ascii", errors="replace", newline="\n"
     )
-    if stdin is not None:
-        stdin.reconfigure(  # type: ignore
+    if sys.stdin is not None:
+        sys.stdin.reconfigure(  # type: ignore
             encoding="utf-8", errors="replace", newline="\n"
         )
     ## End-of-options. The script doesn't support any options but this is good
     ## for consistency.
-    if len(argv) >= 2 and argv[1] == "--":
-        argv.pop(1)
+    if len(sys.argv) >= 2 and sys.argv[1] == "--":
+        sys.argv.pop(1)
     with ExitStack() as stack:
         output_files: list[TextIO] = []
-        if len(argv) > 1:
-            for file_arg in argv[1:]:
+        if len(sys.argv) > 1:
+            for file_arg in sys.argv[1:]:
                 output_files.append(
                     stack.enter_context(
                         open(
@@ -40,10 +40,10 @@ def main() -> None:
                         )
                     )
                 )
-        if stdin is not None:
-            for untrusted_text in stdin:
+        if sys.stdin is not None:
+            for untrusted_text in sys.stdin:
                 rendered_text: str = stdisplay(untrusted_text)
-                stdout.write(rendered_text)
+                sys.stdout.write(rendered_text)
                 for output_file in output_files:
                     output_file.write(rendered_text)
-        stdout.flush()
+        sys.stdout.flush()

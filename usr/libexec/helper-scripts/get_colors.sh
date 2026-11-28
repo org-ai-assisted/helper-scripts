@@ -6,7 +6,11 @@
 ## style-ok: no-strict - sourced library.
 
 # shellcheck source=./check_runtime.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+  exit 1
+fi
 
 # shellcheck disable=SC2034
 get_colors() {
@@ -132,65 +136,65 @@ get_colors_test() {
 
   ## --- Colors -------------------------------------------------------
   ## Foreground colors (8-color ANSI). Each line prints the color name in that color.
-  printf '%b\n' "${red}red${nocolor}"
-  printf '%b\n' "${green}green${nocolor}"
-  printf '%b\n' "${yellow}yellow${nocolor}"
-  printf '%b\n' "${blue}blue${nocolor}"
-  printf '%b\n' "${magenta}magenta${nocolor}"
-  printf '%b\n' "${cyan}cyan${nocolor}"
-  printf '%b\n' "${white}white${nocolor}"
+  printf '%s\n' "${red}red${nocolor}"
+  printf '%s\n' "${green}green${nocolor}"
+  printf '%s\n' "${yellow}yellow${nocolor}"
+  printf '%s\n' "${blue}blue${nocolor}"
+  printf '%s\n' "${magenta}magenta${nocolor}"
+  printf '%s\n' "${cyan}cyan${nocolor}"
+  printf '%s\n' "${white}white${nocolor}"
 
   ## Reset to terminal default foreground color (may differ from white).
-  printf '%b\n' "${default}default${nocolor}"
+  printf '%s\n' "${default}default${nocolor}"
 
   ## --- Text attributes ----------------------------------------------
   ## Bold / increased intensity.
-  printf '%b\n' "${bold}bold${nocolor}"
+  printf '%s\n' "${bold}bold${nocolor}"
 
   ## Cancel bold / intensity (may not affect underline/italic).
-  printf '%b\n' "${nobold}nobold${nocolor}"
+  printf '%s\n' "${nobold}nobold${nocolor}"
 
   ## Italic (may be unsupported or rendered as reverse/underline on some terminals).
-  printf '%b\n' "${italic}italic${nocolor}"
+  printf '%s\n' "${italic}italic${nocolor}"
 
   ## Cancel italic (not tested by default; usually harmless).
-  #printf '%b\n' "${eitalic}eitalic${nocolor}"
+  #printf '%s\n' "${eitalic}eitalic${nocolor}"
 
   ## Underline.
-  printf '%b\n' "${underline}underline${nocolor}"
+  printf '%s\n' "${underline}underline${nocolor}"
 
   ## Cancel underline (not tested by default; usually harmless).
-  #printf '%b\n' "${nounderline}nounderline${nocolor}"
+  #printf '%s\n' "${nounderline}nounderline${nocolor}"
 
   ## Standout / reverse video (often swaps foreground/background).
-  printf '%b\n' "${stout}stout${nocolor}"
+  printf '%s\n' "${stout}stout${nocolor}"
 
   ## Cancel standout / reverse video.
-  printf '%b\n' "${estout}estout${nocolor}"
+  printf '%s\n' "${estout}estout${nocolor}"
 
   ## Blinking text.
-  printf '%b\n' "${blink}blink${nocolor}"
+  printf '%s\n' "${blink}blink${nocolor}"
 
   ## --- Cursor / screen control --------------------------------------
   ## Hide cursor, print "hide", then show cursor again.
   ## Useful to confirm the escape sequences do not break output.
-  printf '%b\n' "${hide}hide${show}${nocolor}"
+  printf '%s\n' "${hide}hide${show}${nocolor}"
 
   ## Cursor save/restore (not tested by default because it can look odd
   ## depending on where the cursor is when printed).
-  #printf '%b\n' "${save}save${load}${nocolor}"
+  #printf '%s\n' "${save}save${load}${nocolor}"
 
   ## Erase to end of display (J) / end of line (K) / beginning of line (1K)
   ## / whole line (2K). These are hard to "see" in a simple print, but
   ## included for completeness.
-  #printf '%b\n' "${eed}eed${nocolor}"
-  #printf '%b\n' "${eel}eel${nocolor}"
-  #printf '%b\n' "${ebl}ebl${nocolor}"
-  #printf '%b\n' "${ewl}ewl${nocolor}"
+  #printf '%s\n' "${eed}eed${nocolor}"
+  #printf '%s\n' "${eel}eel${nocolor}"
+  #printf '%s\n' "${ebl}ebl${nocolor}"
+  #printf '%s\n' "${ewl}ewl${nocolor}"
 
   ## Backspace character. Typically moves cursor one column left; visual
   ## effect depends on surrounding output.
-  #printf '%b\n' "${back}back${nocolor}"
+  #printf '%s\n' "${back}back${nocolor}"
 
   ## Drawing characters capability is intentionally unsupported in this
   ## modern implementation; kept for compatibility (usually empty).

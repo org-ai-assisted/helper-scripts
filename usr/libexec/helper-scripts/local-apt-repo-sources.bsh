@@ -1,0 +1,71 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## style-ok: no-strict - sourced library.
+
+## Given a file: URI pointing to a local apt repository, and accompanying
+## metadata, outputs a deb822 sources stanza that will tell apt to use that
+## repository.
+local_apt_repo_sources_stanza() {
+  ## LC_ALL=C so the component-name charset check below matches ASCII ranges
+  ## only (a UTF-8 locale would fold accented/Unicode chars into A-Za-z).
+  local LC_ALL=C
+  local uri suite repo_path arch dist_path component_path component_str \
+    component_list_str component_index_dir
+
+  uri="${1:-}"
+  suite="${2:-}"
+  repo_path="${3:-}"
+  arch="${4:-$(dpkg --print-architecture 2>/dev/null || printf '%s' amd64)}"
+
+  if [ -z "${uri}" ] \
+    || [ -z "${suite}" ]; then
+    return 2
+  fi
+
+  if [ -z "${repo_path}" ]; then
+    repo_path="${uri#file:}"
+  fi
+  dist_path="${repo_path}/dists/${suite}"
+  component_list_str=""
+  for component_path in "${dist_path}"/*/; do
+    [ -d "${component_path}" ] || continue
+    ## Resident if the binary-<arch> index carries entries in any form apt accepts:
+    ## uncompressed Packages or a compressed Packages.gz/.xz (reprepro or a real
+    ## mirror may ship compressed-only). An absent or 0-byte index means nothing for
+    ## this arch and apt would hard-fail fetching it, so the component is dropped.
+    component_index_dir="${component_path}binary-${arch}"
+    if [ -s "${component_index_dir}/Packages" ] \
+      || [ -s "${component_index_dir}/Packages.gz" ] \
+      || [ -s "${component_index_dir}/Packages.xz" ]; then
+      component_str="${component_path%/}"
+      component_str="${component_str##*/}"
+      ## Emit only a syntactically valid apt component name. A directory name
+      ## with whitespace/newline/colon would otherwise inject deb822 fields
+      ## into this Trusted stanza (e.g. a forged Suites: overriding the suite).
+      case ${component_str} in
+        '' | *[!A-Za-z0-9._+-]*)
+          continue
+          ;;
+      esac
+      component_list_str="${component_list_str}${component_list_str:+ }${component_str}"
+    fi
+  done
+  ## No resident component for this arch (or the scan dir is absent) -> fall back
+  ## to 'main', always present in a derivative local repo. Shared contract pinned
+  ## by dist-ai local_apt_repo_sources_test.sh; both consumers
+  ## (create-local-apt-repo, repo-add-local) rely on it, and a legitimately
+  ## empty/base repo must not hard-fail. Correct component detection depends on the
+  ## caller passing the real host repo path (arg 3, not the chroot file: URI); the
+  ## regression tests pin that the correct path then surfaces contrib/non-free.
+  [ -n "${component_list_str}" ] || component_list_str="main"
+
+  printf '%s\n' "Types: deb
+URIs: ${uri}
+Suites: ${suite}
+Components: ${component_list_str}
+Enabled: yes
+Trusted: yes"
+}

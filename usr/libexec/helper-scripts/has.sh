@@ -18,9 +18,13 @@ has() {
 
   for _name in "$@"; do
     _cmd="$(command -v "${_name}")" 2>/dev/null || return 1
-    ## TODO: Consider making it so that this command's only purpose is to check
-    ## for executable files. In that instance we would want to error out if
-    ## anything other than an absolute path is passed.
+    ## REMINDER: has() is the R-090 drop-in replacement for 'command -v' and
+    ## must succeed for everything 'command -v' does, builtins included --
+    ## 'command -v' prints a bare word (not a path) for a builtin, function,
+    ## alias or keyword. The '-x' check therefore applies only to a resolved
+    ## absolute path. Do NOT restrict this to executable files only: that
+    ## re-breaks 'has printf' (commit baa77320c) and dist-ai's
+    ## has_builtin_test.sh canaries exactly that regression.
     case "${_cmd}" in
       /*)
         [ -x "${_cmd}" ] || return 1

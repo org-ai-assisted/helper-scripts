@@ -80,7 +80,7 @@ process_backtrace() {
       fi
       if [ "${cp}" = "1" ]; then
          ## reached init [PID 1] -> end of trace
-         trace="${trace} : init\n"
+         trace="${trace} : init"$'\n'
          break
       fi
       if [ "${cp}" = "0" ] || ! [[ "${cp}" =~ ^[0-9]+$ ]]; then
@@ -114,9 +114,9 @@ process_backtrace() {
          ps_p_output="$(ps --no-headers -p "${cp}")" || true
          printf '%s\n' "process_backtrace ERROR: /proc/${cp}/status missing | ps: ${ps_p_output}" >&2
       fi
-      trace="${trace} : ${cmdline}\n"
+      trace="${trace} : ${cmdline}"$'\n'
       cp="${pp}"
    done
    ## tac to print init-first; grep --line-number renumbers from 1.
-   printf '%b' "${trace}" | tac | grep --line-number -- ":" || true
+   printf '%s' "${trace}" | tac | grep --line-number -- ":" || true
 }

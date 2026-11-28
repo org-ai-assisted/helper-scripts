@@ -36,6 +36,9 @@ Detailed guidance for AI agents working on this codebase.
   a headless / confined / cron launch otherwise SIGABRTs (exit 134, an uncatchable C++ qFatal).
   It checks DISPLAY / WAYLAND_DISPLAY and honours `QT_QPA_PLATFORM` (offscreen / CI renders are
   NOT suppressed); it exits 0 with a stderr note. Reuse the shared helper -- never duplicate the check.
+- `env-generator-emit`: emits systemd env lines via `printf %q` + a `comm` diff. Imperfect
+  escaping of values with spaces / newlines / other `%q`-escaped chars is OUT OF SCOPE (the
+  environment is trusted, not adversarial). Keep this design; do not rewrite it NUL-safe.
 
 ## Tests
 

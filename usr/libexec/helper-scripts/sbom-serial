@@ -1,0 +1,31 @@
+#!/usr/bin/python3 -Bsu
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Print the RFC 4122 v5 (SHA-1) UUID of a name over the URL namespace.
+##
+## derivative-sbom uses this for the CycloneDX document serial. Computing it
+## from the Python stdlib (uuid.uuid5) means the serial needs no uuidgen /
+## uuid-runtime -- not a helper-scripts dependency, absent on minimal and CI
+## environments, where a uuidgen-based serial aborts the build. The value
+## equals 'uuidgen --sha1 --namespace @url --name <name>'.
+##
+## Usage: sbom-serial <name>
+
+import sys
+import uuid
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print(
+            f"{sys.argv[0]}: ERROR: expected exactly one <name> argument",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print(uuid.uuid5(uuid.NAMESPACE_URL, sys.argv[1]))
+
+
+if __name__ == "__main__":
+    main()

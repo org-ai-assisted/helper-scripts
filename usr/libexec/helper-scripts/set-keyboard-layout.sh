@@ -11,7 +11,11 @@
 
 ## provides was_executed
 # shellcheck source=./check_runtime.bsh
-source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+  exit 1
+fi
 
 # shellcheck source=./log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
@@ -1090,9 +1094,7 @@ Type 'exit' to quit without changing keyboard layout settings.
       ## 'timeout' is not compatible with the pager and '--no-pager' is unwanted.
       #"${timeout_command[@]}" localectl --no-pager list-x11-keymap-layouts
       localectl-static list-x11-keymap-layouts
-      ## TODO: Minor. Replace above using 'pager' or similar?
-      #printf '%s\n' "${localectl_kb_layouts}" | pager
-      ##       localectl's default pager is better. It does not clear output of this script.
+      ## No pager here: localectl's default pager is better and does not clear this script's output.
       continue
     fi
     if [ "${layout_str}" = 'help' ]; then

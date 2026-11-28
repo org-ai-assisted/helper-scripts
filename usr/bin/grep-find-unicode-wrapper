@@ -9,6 +9,9 @@ set -o errexit
 set -o nounset
 set -o errtrace
 set -o pipefail
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 check_grep_status() {
   if [ "$1" = "0" ]; then
@@ -21,6 +24,7 @@ check_grep_status() {
   fi
 }
 
+## style-ok: no-has -- self-contained wrapper, sources no helper-scripts.
 command -v stecho >/dev/null
 command -v sort >/dev/null
 
@@ -30,18 +34,51 @@ command -v sort >/dev/null
 ## options such as for example '--recursive'. It remains the responsibility of
 ## the user to use end-of-options.
 
-## TODO: stdin support is broken. With "$@" empty, grep reads from stdin -
-## but the four grep invocations below run sequentially, so only the FIRST
-## one consumes the piped bytes; the remaining three see EOF and silently
-## report "no match", which can produce a false negative (notably for the
-## RHSB-2021-007 trojan codepoint check at the third grep and the ASCII
-## control / NUL check at the fourth). For now callers must pass a path;
-## if they have stdin they must stage it via mktemp themselves (see
-## unicode-testscript). Fix would be to slurp stdin into a tempfile here
-## when "$#" -eq 0, then 'set -- "$tmpfile"'. A bash variable will not work
-## because variables silently drop NUL bytes and the fourth grep is
-## specifically scanning for NULs. Pipes are not seekable so we cannot rewind
-## between greps either.
+## stdin support: when stdin is the input, the four sequential greps below
+## would each try to read the same pipe, but only the first can consume it --
+## the rest see EOF and silently miss trojan codepoints (third grep) and NUL /
+## ASCII control bytes (fourth), so the scanner would report "clean" on a
+## suspicious stream. Buffer stdin into a tempfile and scan that file instead.
+## A tempfile, not a variable: bash drops NUL bytes from variables and the
+## fourth grep scans for NULs; pipes are not seekable, so we cannot rewind.
+##
+## stdin is the input for the no-path-operand spellings: no arguments at all,
+## or only the stdin operands '-' / '--'. A '-' mixed with real paths is NOT
+## buffered (grep still scans the real paths); pipe stdin on its own.
+stdin_tmpfile=""
+cleanup() {
+  if [ -n "${stdin_tmpfile}" ]; then
+    safe-rm --force -- "${stdin_tmpfile}"
+  fi
+}
+trap cleanup EXIT
+
+stdin_mode="yes"
+for arg in "$@"; do
+  case "${arg}" in
+    -|--)
+      ## stdin spelling; keep scanning the remaining operands.
+      ;;
+    *)
+      ## a real path or grep option: grep reads files, not the pipe.
+      stdin_mode="no"
+      break
+      ;;
+  esac
+done
+
+if [ "${stdin_mode}" = "yes" ]; then
+  ## Fail distinctly (exit 2, the error code) if the buffer cannot be made:
+  ## exit 1 would be indistinguishable from "scanned, nothing found".
+  if ! stdin_tmpfile="$(mktemp)"; then
+    printf '%s\n' "$0: ERROR: could not create tempfile to buffer stdin." >&2
+    exit 2
+  fi
+  cat > "${stdin_tmpfile}"
+  ## Pass the buffer after '--' so a tempfile path that looks like a grep
+  ## option (e.g. a relative TMPDIR) is treated as the file operand.
+  set -- -- "${stdin_tmpfile}"
+fi
 
 ## --binary-files=text - required to find backspace and null character
 grep_args=(
@@ -50,6 +87,9 @@ grep_args=(
   --binary-files=text
 )
 
+## Greps exit 1 on no-match (expected), so errexit must be off here: let
+## check_grep_status see the real rc instead of the shell aborting on no-match.
+## style-ok: R-011 -- deliberate, scoped errexit toggle around these greps.
 set +o errexit
 
 one="$(LC_ALL=C grep "${grep_args[@]}" --perl-regexp '[^\x00-\x7F]' "$@")"
@@ -108,22 +148,26 @@ set -o errexit
 #output_message="$(printf '%s' "$result" | sort --unique)"
 
 output_message="$(
-  {
-    [ -n "${one:-}"   ] && printf '%s\n' "$one"   || true
-    [ -n "${two:-}"   ] && printf '%s\n' "$two"   || true
-    [ -n "${three:-}" ] && printf '%s\n' "$three" || true
-    [ -n "${four:-}"  ] && printf '%s\n' "$four"  || true
-  } | sort --unique
+  for match in "${one:-}" "${two:-}" "${three:-}" "${four:-}"; do
+    if [ -n "${match}" ]; then
+      printf '%s\n' "${match}"
+    fi
+  done | sort --unique
 )"
 
-if [ "$output_message" = "" ]; then
+## Report stdin matches as grep does, not as the internal tempfile path.
+if [ -n "${stdin_tmpfile}" ]; then
+  output_message="${output_message//${stdin_tmpfile}/(standard input)}"
+fi
+
+if [ "${output_message}" = "" ]; then
   ## No matches found, therefore 'exit 1'.
   ## This is consistent with 'grep', which also exits non-zero if no match has been found.
   exit 1
 fi
 
 ## Use 'stecho' in case the file names itself contain unicode.
-stecho "$output_message"
+stecho "${output_message}"
 
 ## Matches found, therefore 'exit 0'.
 ## This is consistent with 'grep', which also exits 0 if matches have been found.

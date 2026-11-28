@@ -34,10 +34,9 @@ if test -f "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.b
   "${source_encoded}" "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh
 fi
 
-## NOTE: br_add and br_add_to_file are not HTML sanitization functions.
-## They only insert '<br />' tags at newlines.
-## For HTML sanitization, use strip-markup or sanitize-string from this
-## repository instead.
+## NOTE: br_add is not an HTML sanitization function. It only inserts
+## '<br />' tags at newlines. For HTML sanitization, use strip-markup or
+## sanitize-string from this repository instead.
 br_add() {
   local in out
 
@@ -54,19 +53,6 @@ br_add() {
 
   out="${in//$'\n'/'<br />'$'\n'}"
   printf '%s\n' "${out}"
-}
-
-br_add_to_file() {
-  local file_name="$1"
-
-  test -f "${file_name}"
-  safe-rm -f -- "${file_name}_br"
-  touch -- "${file_name}_br"
-
-  local line
-  while IFS= read -r line || [ -n "${line}" ]; do
-    printf '%s\n' "${line}<br />" | tee -a -- "${file_name}_br" >/dev/null
-  done <"${file_name}"
 }
 
 read_integer_file() {
@@ -539,6 +525,7 @@ string_bsh_tests() {
   run_test "safe_filename: rejects control char newline" validate_safe_filename 1 test_value $'hello\nworld'
   run_test "safe_filename: rejects leading dash" validate_safe_filename 1 test_value "-option"
   run_test "safe_filename: accepts colon" validate_safe_filename 0 test_value "test:test"
+  ## style-ok: R-030 -- intentionally not using printf '%s\n'.
   run_test "safe_filename: rejects overlong name" validate_safe_filename 1 test_value "$(printf 'a%.0s' {1..256})"
   run_test "safe_filename: rejects unicode" validate_safe_filename 1 test_value $'caf\xC3\xA9'
 

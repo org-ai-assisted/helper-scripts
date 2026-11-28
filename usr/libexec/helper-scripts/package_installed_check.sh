@@ -11,14 +11,16 @@
 
 ## NOTE: Must not include bashisms!
 
-## NOTE: Fully installed packages only!
-##       'dpkg-query' output 'install ok installed' only.
+## NOTE: Fully installed packages only (third field 'installed'). The want
+##       field may be 'install' or 'hold' -- a held package IS installed
+##       (apt-mark hold only pins the version), so both count as installed.
 
 ## NOTE: code duplication: Function pkg_installed is duplicated elsewhere in derivative-maker source code.
+
 pkg_installed() {
    ## 'local' does not break 'sh'.
    local package_name dpkg_query_output
-   local requested_action status error_state
+   local want error_flag status
 
    package_name="$1"
    ## Cannot use '&>' because it is a bashism.
@@ -27,23 +29,25 @@ pkg_installed() {
    ## install ok half-configured
    ## install ok installed
 
-   requested_action=$(printf '%s' "${dpkg_query_output}" | awk '{print $1}')
-   status=$(printf '%s' "${dpkg_query_output}" | awk '{print $2}')
-   error_state=$(printf '%s' "${dpkg_query_output}" | awk '{print $3}')
+   want=$(printf '%s' "${dpkg_query_output}" | awk '{print $1}')
+   error_flag=$(printf '%s' "${dpkg_query_output}" | awk '{print $2}')
+   status=$(printf '%s' "${dpkg_query_output}" | awk '{print $3}')
 
-   if ! [ "${requested_action}" = 'install' ]; then
-      true "$0: INFO: package ${package_name} requested_action ${requested_action} is not 'install'."
+   ## A held package ('hold ok installed') is installed; apt-mark hold only
+   ## pins its version. Accept 'hold' alongside 'install'.
+   if [ "${want}" != 'install' ] && [ "${want}" != 'hold' ]; then
+      true "$0: INFO: package '${package_name}' want '${want}' is neither 'install' nor 'hold'."
       return 1
    fi
-   if ! [ "${status}" = 'ok' ]; then
-      true "$0: INFO: package ${package_name} requested_action ${status} is not 'ok'."
+   if ! [ "${error_flag}" = 'ok' ]; then
+      true "$0: INFO: package '${package_name}' error_flag '${error_flag}' is not 'ok'."
       return 1
    fi
-   if ! [ "${error_state}" = 'installed' ]; then
-      true "$0: INFO: package ${package_name} requested_action ${error_state} is not 'installed'."
+   if ! [ "${status}" = 'installed' ]; then
+      true "$0: INFO: package '${package_name}' status '${status}' is not 'installed'."
       return 1
    fi
 
-   true "$0: INFO: ${package_name} is installed, ok."
+   true "$0: INFO: '${package_name}' is installed, ok."
    return 0
 }

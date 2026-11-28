@@ -6,11 +6,13 @@
 ## Usage:
 ## dummy-dependency [--remove|--purge] [-y|--yes] 'package-name'
 
-#set -x
-set -e
-set -o errtrace
-set -o pipefail
+set -o errexit
 set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 true "$0: INFO: START"
 
@@ -19,6 +21,7 @@ show_usage() {
    exit 1
 }
 
+# shellcheck disable=SC2317  # cleanup is invoked via 'trap cleanup EXIT'
 cleanup() {
    trap '' EXIT
    if [ -n "${TMPDIR_NEW:-}" ] && [ -d "${TMPDIR_NEW}" ]; then
@@ -65,6 +68,7 @@ Description: dummy-package for '${package_to_replace}'
       mkdir --parents -- /var/lib/dummy-dependency
       ## Avoid APT warning:
       ## N: Download is performed unsandboxed as root as file '/tmp/user/0/tmp.8O7ET4e1Bx/dummy-user-sysmaint-split_99_all.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+      ## style-ok: lpe-symlink-follow,lpe-root-write-user-path -- fixed dest under root-owned /var/lib/dummy-dependency; no user-writable parent to plant a symlink.
       cp --verbose -- "${deb_file_original}" "${deb_file_copy}"
 
       printf '%s\n' "$0: INFO: Dummy package created."
@@ -135,8 +139,8 @@ Description: dummy-package for '${package_to_replace}'
    fi
 
    printf '%s\n' "$0: INFO: '${remove_action}'ing package '${package_to_replace}' and installing 'dummy-${package_to_replace}'..."
-   printf '%s\n' "$0: EXECUTING: apt-get-noninteractive ${yes_option} ${remove_action} -- ${package_to_replace} ${deb_file_copy}"
-   if apt-get-noninteractive ${yes_option} "${remove_action}" -- "${package_to_replace}" "${deb_file_copy}" ; then
+   printf '%s\n' "$0: EXECUTING: apt-get-noninteractive ${yes_option[*]} ${remove_action} -- ${package_to_replace} ${deb_file_copy}"
+   if apt-get-noninteractive "${yes_option[@]}" "${remove_action}" -- "${package_to_replace}" "${deb_file_copy}" ; then
       printf '%s\n' "$0: INFO: Dummy package installed."
    else
       printf '%s\n' "$0: ERROR: 'apt-get-noninteractive' command failed!" >&2
@@ -151,7 +155,7 @@ Description: dummy-package for '${package_to_replace}'
 TMPDIR_OLD=''
 TMPDIR_NEW=''
 package_to_replace=""
-yes_option=""
+yes_option=()
 remove_option="--remove"
 cached_option=""
 cache_only_option=""
@@ -160,7 +164,7 @@ cache_only_option=""
 while [ "$#" -gt 0 ]; do
    case "$1" in
       -y|--yes)
-         yes_option="--yes"
+         yes_option=(--yes)
          shift
          ;;
       --remove|--purge)
@@ -182,8 +186,8 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
-if [ "$cached_option" = "true" ]; then
-   if [ "$cache_only_option" = "true" ]; then
+if [ "${cached_option}" = "true" ]; then
+   if [ "${cache_only_option}" = "true" ]; then
       printf '%s\n' "$0: ERROR: '--cached' option must not be combined with '--cache-only' option!" >&2
       exit 1
    fi

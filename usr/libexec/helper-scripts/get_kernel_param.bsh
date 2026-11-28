@@ -1,0 +1,59 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## Reads the kernel command line and parses variables from it.
+
+## style-ok: no-strict - sourced library.
+
+get_kernel_param_kernel_cmdline=""
+
+read_kernel_cmdline() {
+  local proc_cmdline proc_1_cmdline
+  proc_cmdline="${GET_KERNEL_PARAM_PROC_CMDLINE:-/proc/cmdline}"
+  proc_1_cmdline="${GET_KERNEL_PARAM_PROC_1_CMDLINE:-/proc/1/cmdline}"
+  if [ -n "${get_kernel_param_kernel_cmdline}" ]; then
+    return 0
+  fi
+  if [ -r "${proc_cmdline}" ]; then
+    read -r get_kernel_param_kernel_cmdline < "${proc_cmdline}" || return 1
+  elif [ -r "${proc_1_cmdline}" ]; then
+    ## PID 1's command line is NUL-separated and ends with a NUL, not a
+    ## newline. 'read' would assign the converted text but still return failure
+    ## at EOF, so the FIRST lookup wrongly reported nothing (only a second,
+    ## cache-warmed lookup succeeded). Capture via command substitution so the
+    ## result keys on 'tr's own exit status, not on a missing trailing newline.
+    get_kernel_param_kernel_cmdline="$(tr '\0' ' ' < "${proc_1_cmdline}")" || return 1
+  else
+    return 1
+  fi
+}
+
+get_kernel_param() {
+  local param
+
+  param="${1:-}"
+  [ -n "${param}" ] || return 1
+
+  if [ -z "${get_kernel_param_kernel_cmdline}" ]; then
+    read_kernel_cmdline || return 1
+  fi
+
+  ## Boundaries are whitespace only. Kicksecure/Whonix kernel parameters are
+  ## quote-free key=value tokens, so a quoted value containing spaces (e.g.
+  ## note="a mode=wrong b") does not occur. Do NOT add quote-aware tokenizing
+  ## here: it would reinvent a shell parser for input that never arises.
+  if [[ "${get_kernel_param_kernel_cmdline}" \
+    =~ (^| )"${param}"(=([^ ]*)?)?($| ) ]]; then
+    if [ -n "${BASH_REMATCH[3]:-}" ]; then
+      printf '%s\n' "${BASH_REMATCH[3]}"
+    elif [ -n "${BASH_REMATCH[2]:-}" ]; then
+      printf '%s\n' "GKP_SET_BLANK"
+    else
+      printf '%s\n' "GKP_PRESENT"
+    fi
+  else
+    printf '%s\n' "GKP_ABSENT"
+  fi
+}

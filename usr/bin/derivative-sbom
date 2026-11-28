@@ -1,0 +1,145 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## provides was_executed
+# shellcheck source=../libexec/helper-scripts/check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
+
+## Generate a CycloneDX software bill of materials describing the currently
+## installed system using debsbom.
+
+## Determine which derivative this is running under.
+derivative_sbom_identity() {
+   local etc_dir
+   etc_dir="${SBOM_ETC_DIR:-/etc}"
+   if [ -r "${etc_dir}/whonix_version" ]; then
+      distro_id="Whonix"
+      distro_version="$(cat -- "${etc_dir}/whonix_version")"
+   elif [ -r "${etc_dir}/kicksecure_version" ]; then
+      distro_id="Kicksecure"
+      distro_version="$(cat -- "${etc_dir}/kicksecure_version")"
+   elif [ -r "${etc_dir}/os-release" ]; then
+      # shellcheck disable=SC1090
+      distro_id="$(unset ID; source "${etc_dir}/os-release"; printf '%s' "${ID:-debian}")"
+      # shellcheck disable=SC1090
+      distro_version="$(unset VERSION_ID VERSION; source "${etc_dir}/os-release"; printf '%s' "${VERSION_ID:-${VERSION:-}}")"
+   else
+      distro_id="debian"
+      distro_version=""
+   fi
+}
+
+## Creates a serial UUID for the SBOM. Args: <name> <version> <arch>
+## <timestamp>.
+derivative_sbom_serial() {
+   "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/sbom-serial \
+      "sbom:${1}:${2}:${3}:${4}"
+}
+
+## True if the fragments directory contains at least one '*.cdx.json' file.
+derivative_sbom_have_fragments() {
+   local frag_dir
+   local -a match_list
+   frag_dir="$1"
+   [ -d "${frag_dir}" ] || return 1
+   shopt -s nullglob
+   match_list=( "${frag_dir}"/*.cdx.json )
+   shopt -u nullglob
+   [ "${#match_list[@]}" -gt 0 ]
+}
+
+## Write a new reproducible SBOM to to ${1}, with optional document
+## timestamp ${2}.
+derivative_sbom_generate() {
+   local out timestamp distro_arch sbom_serial out_target frag_dir merge_tool
+   local debsbom_cmd_list
+   out="$1"
+   timestamp="${2:-}"
+   derivative_sbom_identity
+   distro_arch="$(dpkg --print-architecture)"
+   [ -n "${timestamp}" ] || timestamp="$(date --utc +%Y-%m-%dT%H:%M:%S+00:00)"
+   ## Prevents output from being influenced by hash randomization.
+   export PYTHONHASHSEED=0
+   sbom_serial="$(derivative_sbom_serial "${distro_id}" "${distro_version}" "${distro_arch}" "${timestamp}")"
+   ## debsbom will append '.cdx.json' to the filename specified by --out if it
+   ## isn't there already, therefore write to stdout and redirect to work
+   ## around this.
+   if [ "${out}" = "-" ]; then
+      out_target="/dev/stdout"
+   else
+      out_target="${out}"
+   fi
+   frag_dir="${SBOM_FRAGMENTS_DIR:-/usr/share/sbom/fragments.d}"
+   merge_tool="${HELPER_SCRIPTS_PATH:-}/usr/libexec/helper-scripts/sbom-fragment-merge"
+   debsbom_cmd_list=(
+      debsbom generate
+         --sbom-type cdx
+         --cdx-schema-version 1.6
+         --cdx-serialnumber "${sbom_serial}"
+         --timestamp "${timestamp}"
+         --distro-name "${distro_id}"
+         --distro-version "${distro_version}"
+         --out -
+   )
+   if derivative_sbom_have_fragments "${frag_dir}"; then
+      "${debsbom_cmd_list[@]}" | "${merge_tool}" "${frag_dir}" > "${out_target}"
+   else
+      "${debsbom_cmd_list[@]}" > "${out_target}"
+   fi
+}
+
+main() {
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+
+   local out timestamp
+   out="-"
+   timestamp=""
+   while [ "$#" -gt 0 ]; do
+      case "$1" in
+         --out)
+            if [ "$#" -lt 2 ]; then
+               printf '%s\n' "${0##*/}: --out requires a value" >&2
+               exit 64
+            fi
+            out="$2"
+            shift 2
+            ;;
+         --timestamp)
+            if [ "$#" -lt 2 ]; then
+               printf '%s\n' "${0##*/}: --timestamp requires a value" >&2
+               exit 64
+            fi
+            timestamp="$2"
+            shift 2
+            ;;
+         -h|--help)
+            printf '%s\n' "Usage: ${0##*/} [--out FILE] [--timestamp ISO8601]
+  --out FILE        write a CycloneDX SBOM to FILE (default: stdout)
+  --timestamp TS    pin the document timestamp (default: now)"
+            exit 0
+            ;;
+         *)
+            printf '%s\n' "${0##*/}: unknown argument: $1" >&2
+            exit 64
+            ;;
+      esac
+   done
+
+   derivative_sbom_generate "${out}" "${timestamp}"
+}
+
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi

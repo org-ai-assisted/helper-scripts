@@ -152,7 +152,22 @@ else
    output_cmd "WARNING: Tor bootstrap not done."
 fi
 
-## TODO: Tor cert valid after must be after Tor consensus middle range to avoid using stale Tor consensus
+## REMINDER: the cert-valid-after-vs-middle-range cross-check (the old TODO to
+## reject a stale consensus) is NOT implemented. The middle-range comes from an
+## authority-signed consensus: un-forgeable, but REPLAYABLE. An on-path attacker
+## (controlled dir-mirror / bridge, or broken dir TLS) can feed an OLD genuinely-
+## signed consensus; under a behind clock Tor accepts it and serves its stale
+## valid-after over the ControlPort. anondate-set is forward-only + minimum-time
+## floored, which BOUNDS but does not ELIMINATE this: a replay moves a behind clock
+## forward to -- and pins it at -- an attacker-chosen PAST time (valid-after +
+## 1h30), anywhere in (floor, now); not "toward real now". Tor's own ~4-week
+## consensus tolerance is the practical outer bound (older breaks Tor rather than
+## skewing it); sdwdate's authenticated onion-median time corrects it afterwards.
+## A blocking cross-check would be only PARTIAL defense (it catches a replay when
+## honest relays still present fresh, un-replayable TLS link certs) and keys on the
+## per-boot, itself-untrusted, log-parsed cert date, so it risks false rejects that
+## delay sdwdate. Accepted, documented bootstrap limitation
+## (whonix.org/wiki/Dev/TimeSync 7.3.14-7.3.15), not patched here.
 
 output_cmd "INFO: Attempting to determine Tor consensus time middle range..."
 

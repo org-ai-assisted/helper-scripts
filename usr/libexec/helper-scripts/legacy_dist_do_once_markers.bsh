@@ -1,0 +1,22 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## style-ok: no-strict - sourced library.
+
+## Single source of truth for legacy-dist 'do_once' marker basenames that are
+## shared between the image build and runtime checks, so a rename cannot drift
+## between the producer and the consumer.
+##
+## image_builtin_mok_absent_marker_basename:
+##   Producer: the image build (initializer-dist
+##     chroot-scripts-post.d/20_sanity_checks) drops this marker, but ONLY after
+##     it has PROVEN the image ships no built-in MOK key.
+##   Consumer: check-image-builtin-mok short-circuits to "safe" when it is
+##     present, treating any MOK key on disk as a legitimate per-machine key
+##     generated at runtime, never a shared key leaked through the image.
+##   Location: /var/lib/legacy-dist/do_once/<basename>.
+## shellcheck: consumed by sourcing scripts, not within this fragment.
+# shellcheck disable=SC2034
+image_builtin_mok_absent_marker_basename='image_built_without_mok'

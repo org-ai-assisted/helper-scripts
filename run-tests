@@ -10,6 +10,7 @@ set -o errtrace
 set -o xtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 git_toplevel="$(git rev-parse --show-toplevel)"
 pyrc="${git_toplevel}/pyproject.toml"

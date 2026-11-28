@@ -1,8 +1,11 @@
-#!/bin/bash
+#!/bin/bash -e
 
 ## Copyright (C) 2018 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## Copyright (C) 2018 Iry Koon <iry@riseup.net>
 ## See the file COPYING for copying conditions.
+
+## Default variables are set indirectly.
+# shellcheck disable=SC2154
 
 #### meta start
 #### project Whonix
@@ -41,132 +44,177 @@
 ## on non-Whonix systems, prints a warning and exits
 #### meta end
 
-set -x
-set -o errexit
-set -o nounset
-set -o pipefail
-set -o errtrace
-shopt -s inherit_errexit
-shopt -s shift_verbose
+## provides was_executed
+# shellcheck source=./check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+  printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+  exit 1
+fi
+
+## Note for AI agents: No need to check that sourcing works except for
+## check_runtime.bsh; ensuring other scripts exist is the job of apt
+## dependencies. In the future, source_once will do this job automatically.
 
 # shellcheck source=./strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
-true "$0: START"
-
-if [ ! -d /etc/tor ]; then
-   /usr/bin/install -Z -m 00755 -o root -g root -d /etc/tor
-fi
-
-if [ ! -d /etc/torrc.d ]; then
-   /usr/bin/install -Z -m 00755 -o root -g root -d /etc/torrc.d
-fi
-
-if [ ! -d /usr/local/etc/torrc.d ]; then
-   /usr/bin/install -Z -m 00755 -o root -g root -d /usr/local/etc/torrc.d
-fi
-
-## files:
-
-if test -f /usr/share/anon-gw-base-files/gateway ; then
-  if [ ! -e /etc/tor/torrc ]; then
-    /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/etc_tor_torrc_template.conf /etc/tor/torrc
+## Create the client-onion-auth dir at 0700 without widening its parents and
+## without following a symlink planted at the dir itself.
+## - Parent widening: 'install -d' force-creates a MISSING ancestor at 0755
+##   (ignoring umask AND -m), widening e.g. /var/lib/tor under a hardened
+##   umask -- so create ancestors with umask-honored 'mkdir --parents' first.
+## - Symlink follow: the parent /var/lib/tor is debian-tor-owned, so debian-tor
+##   can pre-plant 'authdir' as a symlink to a root-owned victim (e.g. /etc);
+##   'install -d -m 0700' and main's chown would then chmod/chown the TARGET,
+##   handing it to debian-tor (-> root). Refuse a pre-existing symlink or
+##   non-directory, and create the dir with plain 'mkdir' -- which NEVER follows
+##   a final-component symlink (EEXIST), so a TOCTOU-planted symlink aborts
+##   rather than redirects. Source-able so repair_torrc_authdir_perm_test can
+##   drive it directly.
+repair_torrc_create_authdir() {
+  local authdir
+  authdir="$1"
+  mkdir --parents -- "${authdir%/*}"
+  if [ -L "${authdir}" ] || { [ -e "${authdir}" ] && [ ! -d "${authdir}" ]; }; then
+    printf '%s\n' "$0: ERROR: refusing '${authdir}': not a plain directory (possible symlink attack)!" >&2
+    exit 1
   fi
-  if [ ! -e /etc/torrc.d/95_whonix.conf ]; then
-    /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/etc_torrc_d_template.conf /etc/torrc.d/95_whonix.conf
+  if [ ! -d "${authdir}" ]; then
+    mkdir --mode=0700 -- "${authdir}"
   fi
-  if [ ! -e /usr/local/etc/torrc.d/40_tor_control_panel.conf ]; then
-    /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/tor_control_panel_torrc_template.conf /usr/local/etc/torrc.d/40_tor_control_panel.conf
+}
+
+main() {
+  set -x
+  set -o errexit
+  set -o nounset
+  set -o pipefail
+  set -o errtrace
+  shopt -s inherit_errexit
+  shopt -s shift_verbose
+  export LC_ALL=C
+
+  true "$0: START"
+
+  if [ ! -d /etc/tor ]; then
+    /usr/bin/install -Z -m 00755 -o root -g root -d /etc/tor
   fi
-  if [ ! -e /usr/local/etc/torrc.d/50_user.conf ]; then
-    /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/user_torrc_template.conf /usr/local/etc/torrc.d/50_user.conf
+
+  if [ ! -d /etc/torrc.d ]; then
+    /usr/bin/install -Z -m 00755 -o root -g root -d /etc/torrc.d
   fi
-fi
 
-## /etc/torrc.d/65_gateway.conf
-## ClientOnionAuthDir /var/lib/tor/authdir
-default_if_empty tor_user "debian-tor"
-default_if_empty tor_group "debian-tor"
-default_if_empty tor_dir "/var/lib/tor"
-default_if_empty client_onion_auth_dir "${tor_dir}/authdir"
+  if [ ! -d /usr/local/etc/torrc.d ]; then
+    /usr/bin/install -Z -m 00755 -o root -g root -d /usr/local/etc/torrc.d
+  fi
 
-if ! test -d "${client_onion_auth_dir}"; then
-   mkdir --parents -- "${client_onion_auth_dir}"
-   chmod 0700 -- "${client_onion_auth_dir}"
-fi
+  ## files:
 
-chown -- "${tor_user}:${tor_group}" "${client_onion_auth_dir}"
+  if test -f /usr/share/anon-gw-base-files/gateway ; then
+    if [ ! -e /etc/tor/torrc ]; then
+      /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/etc_tor_torrc_template.conf /etc/tor/torrc
+    fi
+    if [ ! -e /etc/torrc.d/95_whonix.conf ]; then
+      /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/etc_torrc_d_template.conf /etc/torrc.d/95_whonix.conf
+    fi
+    if [ ! -e /usr/local/etc/torrc.d/40_tor_control_panel.conf ]; then
+      /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/tor_control_panel_torrc_template.conf /usr/local/etc/torrc.d/40_tor_control_panel.conf
+    fi
+    if [ ! -e /usr/local/etc/torrc.d/50_user.conf ]; then
+      /usr/bin/install -Z -m 00644 -o root -g root -T /usr/share/anon-gw-anonymizer-config/user_torrc_template.conf /usr/local/etc/torrc.d/50_user.conf
+    fi
+  fi
 
-if test -f /usr/share/anon-gw-base-files/gateway ; then
-   true "INFO: Whonix detected, ok."
-else
-   true "\
+  ## /etc/torrc.d/65_gateway.conf
+  ## ClientOnionAuthDir /var/lib/tor/authdir
+  default_if_empty tor_user "debian-tor"
+  default_if_empty tor_group "debian-tor"
+  default_if_empty tor_dir "/var/lib/tor"
+  default_if_empty client_onion_auth_dir "${tor_dir}/authdir"
+
+  repair_torrc_create_authdir "${client_onion_auth_dir}"
+
+  ## --no-dereference: never chown through a symlink. repair_torrc_create_authdir
+  ## already refuses a symlink, but if debian-tor swaps authdir to a symlink in
+  ## the window before this chown, '-h' chowns the link itself, not its target.
+  chown --no-dereference -- "${tor_user}:${tor_group}" "${client_onion_auth_dir}"
+
+  if test -f /usr/share/anon-gw-base-files/gateway ; then
+    true "INFO: Whonix detected, ok."
+  else
+    true "\
 WARNING: $0 is not yet implemented for non-Whonix, see:
 https://forums.whonix.org/t/tor-controller-gui-tor-control-panel/5444/94"
-   exit 0
-fi
+    exit 0
+  fi
 
-torrcd_path='/etc/torrc.d/95_whonix.conf'
-torrc_file_path='/usr/local/etc/torrc.d/40_tor_control_panel.conf'
-torrc_user_file_path='/usr/local/etc/torrc.d/50_user.conf'
+  torrcd_path='/etc/torrc.d/95_whonix.conf'
+  torrc_file_path='/usr/local/etc/torrc.d/40_tor_control_panel.conf'
+  torrc_user_file_path='/usr/local/etc/torrc.d/50_user.conf'
 
-for folder_name in /etc/tor /etc/torrc.d /usr/local/etc/torrc.d ; do
-   if test -d "${folder_name}" ; then
+  for folder_name in /etc/tor /etc/torrc.d /usr/local/etc/torrc.d ; do
+    if test -d "${folder_name}" ; then
       true "INFO: folder ${folder_name} already exists, ok."
-   else
+    else
       true "INFO: folder ${folder_name} does not exist yet, creating..."
       mkdir --parents -- "${folder_name}"
-   fi
-done
+    fi
+  done
 
-if test -f /etc/tor/torrc ; then
-   true "INFO: file /etc/tor/torrc already exists, ok."
-   if grep --quiet -- '%include /etc/torrc.d/\*.conf$' /etc/tor/torrc ; then
+  if test -f /etc/tor/torrc ; then
+    true "INFO: file /etc/tor/torrc already exists, ok."
+    if grep --quiet -- '%include /etc/torrc.d/\*.conf$' /etc/tor/torrc ; then
       true "INFO: already includes - %include /etc/torrc.d/*.conf - ok."
-   else
+    else
       true "INFO: does not include - %include /etc/torrc.d/*.conf - yet."
       printf '%s\n' "\
 # The following line has been added by /usr/libexec/helper-scripts/repair-torrc
 %include /etc/torrc.d/*.conf" | tee -a /etc/tor/torrc >/dev/null
-   fi
-else
-   true "INFO: file /etc/tor/torrc does not exist yet, creating..."
-   printf '%s\n' "\
+    fi
+  else
+    true "INFO: file /etc/tor/torrc does not exist yet, creating..."
+    printf '%s\n' "\
 # The following line has been added by /usr/libexec/helper-scripts/repair-torrc
 %include /etc/torrc.d/*.conf" | tee -a -- /etc/tor/torrc >/dev/null
-fi
+  fi
 
-if test -f "${torrcd_path}" ; then
-   true "INFO: file ${torrcd_path} already exists, ok."
-else
-   true "INFO: file ${torrcd_path} does not exist yet, creating."
-   printf '%s\n' "\
+  if test -f "${torrcd_path}" ; then
+    true "INFO: file ${torrcd_path} already exists, ok."
+  else
+    true "INFO: file ${torrcd_path} does not exist yet, creating."
+    printf '%s\n' "\
 # Do not edit this file!
 # Please add modifications to the following file instead:
 # This file has been created by /usr/libexec/helper-scripts/repair-torrc
 %include /usr/local/etc/torrc.d/*.conf" | tee -a -- "${torrcd_path}" >/dev/null
-fi
+  fi
 
-if test -f "${torrc_file_path}" ; then
-   true "INFO: file ${torrc_file_path} already exists, ok."
-else
-   true "INFO: file ${torrc_file_path} does not exist yet, creating..."
-   printf '%s\n' "\
+  if test -f "${torrc_file_path}" ; then
+    true "INFO: file ${torrc_file_path} already exists, ok."
+  else
+    true "INFO: file ${torrc_file_path} does not exist yet, creating..."
+    printf '%s\n' "\
 # Do not edit this file!
 # This file has been created by /usr/libexec/helper-scripts/repair-torrc
 # Please add modifications to the following file instead:
 # /usr/local/etc/torrc.d/50_user.conf" | tee -- "${torrc_file_path}" >/dev/null
-fi
+  fi
 
-if test -f "${torrc_user_file_path}" ; then
-   true "INFO: file ${torrc_user_file_path} already exists, ok."
-else
-   true "INFO: file ${torrc_user_file_path} does not exist yet, creating..."
-   printf '%s\n' "\
+  if test -f "${torrc_user_file_path}" ; then
+    true "INFO: file ${torrc_user_file_path} already exists, ok."
+  else
+    true "INFO: file ${torrc_user_file_path} does not exist yet, creating..."
+    printf '%s\n' "\
 # Tor user specific configuration file
 #
 # Add user modifications below this line:
 ############################################" | tee -- "${torrc_user_file_path}" >/dev/null
-fi
+  fi
 
-true "$0: END"
+  true "$0: END"
+}
+
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi

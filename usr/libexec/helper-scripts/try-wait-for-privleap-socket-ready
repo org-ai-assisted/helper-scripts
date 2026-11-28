@@ -1,0 +1,64 @@
+#!/bin/bash -e
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## provides was_executed
+# shellcheck source=./check_runtime.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/check_runtime.bsh || true
+if ! declare -F was_executed >/dev/null; then
+   printf '%s\n' "$0: ERROR: cannot source check_runtime.bsh!" >&2
+   exit 1
+fi
+
+# shellcheck source=./use_leaprun.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/use_leaprun.sh
+
+# shellcheck source=./light_sleep.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/light_sleep.bsh
+
+# shellcheck source=./strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
+
+## Wait up to 30-seconds for the privleap comm socket for this user to become
+## available and able to be connected to.
+try_wait_for_privleap_socket_ready() {
+   local delay_ctr max_ctr
+   delay_ctr=0
+
+   max_ctr="${privleap_socket_wait_max_ctr:-30}"
+   if [ -z "${max_ctr}" ] \
+      || ! is_whole_number_int64 "${max_ctr}" \
+      || [ "${max_ctr}" -lt 0 ] \
+      || [ "${max_ctr}" -gt 99999 ]; then
+      max_ctr='30'
+   fi
+
+   while [ "${delay_ctr}" -lt "${max_ctr}" ]; do
+      leaprun_useable_test 2>/dev/null || true
+      if [ "${use_leaprun:-no}" = "yes" ]; then
+         return 0
+      fi
+      light_sleep 1
+      delay_ctr="$(( delay_ctr + 1 ))"
+   done
+   return 0
+}
+
+main() {
+   set -o errexit
+   set -o nounset
+   set -o pipefail
+   set -o errtrace
+   shopt -s inherit_errexit
+   shopt -s shift_verbose
+   export LC_ALL=C
+
+   try_wait_for_privleap_socket_ready
+}
+
+if was_executed "${BASH_SOURCE[0]}"; then
+   main "$@"
+fi

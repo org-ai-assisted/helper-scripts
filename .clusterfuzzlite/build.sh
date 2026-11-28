@@ -44,10 +44,17 @@ export PYTHONPATH="${SRC}/helper-scripts/usr/lib/python3/dist-packages${PYTHONPA
 ## would otherwise pass vacuously.
 # shellcheck disable=SC1090,SC1091
 source "${SRC}/dist-ai/usr/share/clusterfuzzlite-lib/smoke-run.bash"
+## harness-glob.bash expands the harness glob with nullglob PLUS a zero-match
+## FATAL, so a build that matches no harness fails loud instead of silently
+## compiling zero fuzzers (nullglob alone) or crashing on the literal pattern.
+# shellcheck disable=SC1090,SC1091
+source "${SRC}/dist-ai/usr/share/clusterfuzzlite-lib/harness-glob.bash"
 
 ## Wrap each fuzz/fuzz_*.py harness for OSS-Fuzz's Python runtime, then smoke-run
 ## it to catch a frozen-bundle SILENT SKIP.
-for harness in fuzz/fuzz_*.py; do
+declare -a harnesses
+cflite_list_harnesses harnesses 'fuzz/fuzz_*.py'
+for harness in "${harnesses[@]}"; do
   name="$(basename -- "${harness}" .py)"
   compile_python_fuzzer "${harness}"
   cflite_smoke_run_fuzzers "${name}"

@@ -1,0 +1,396 @@
+#!/usr/bin/python3 -Bsu
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+# pylint: disable=invalid-name
+
+"""
+Merge CycloneDX component fragments with a base CycloneDX SBOM.
+
+WARNING: This is NOT a general-purpose CycloneDX document merger. Only the
+subset of functionality needed by Kicksecure and Whonix internally is
+implemented.
+"""
+
+from pathlib import Path
+from typing import cast, NoReturn, Union, Sequence
+import hashlib
+import json
+import os
+import sys
+
+CDX_TYPE = Union[dict[str, "CDX_TYPE"], Sequence["CDX_TYPE"], str, None]
+
+
+def die(msg: str) -> NoReturn:
+    """
+    Print an error message and exit.
+    """
+
+    print(f"sbom-fragment-merge: ERROR: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def _reject_constant(token: str) -> None:
+    """
+    Raise when an out-of-range numeric constant is found during JSON parsing.
+    """
+
+    raise ValueError(f"non-standard JSON constant '{token}' found")
+
+
+def load_json(text: str, src_info: str) -> CDX_TYPE:
+    """
+    Parse a JSON string into an object, terminating the program if this fails.
+    """
+
+    try:
+        return cast(
+            CDX_TYPE, json.loads(text, parse_constant=_reject_constant)
+        )
+    except ValueError as exc:
+        die(f"{src_info} is not valid JSON: {exc}")
+
+
+def content_key(component: dict[str, CDX_TYPE]) -> str:
+    """
+    Deterministically hash a CycloneDX component.
+    """
+
+    return hashlib.sha256(
+        json.dumps(component, sort_keys=True, ensure_ascii=True).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+
+def str_field(component: dict[str, CDX_TYPE], name: str) -> str | None:
+    """
+    Extract a string from a CycloneDX component, returning None if the string
+    does not exist or is empty.
+    """
+
+    value: CDX_TYPE = component.get(name)
+    return value if isinstance(value, str) and value != "" else None
+
+
+def components_from_fragment(
+    path: Path, data: dict[str, CDX_TYPE]
+) -> list[dict[str, CDX_TYPE]]:
+    """
+    If given a component, return the component wrapped in a list. If given a
+    CycloneDX document, return the list of components from it. Terminates the
+    program if this fails.
+    """
+
+    if isinstance(data.get("type"), str) and isinstance(data.get("name"), str):
+        ## 'data' is a component.
+        return [data]
+    if isinstance(data.get("bomFormat"), str):
+        ## 'data' is a CycloneDX document.
+        components: list[dict[str, CDX_TYPE]] = cast(
+            list[dict[str, CDX_TYPE]], data.get("components", [])
+        )
+        if not isinstance(components, list):
+            die(f"'{path}': 'components' is not a JSON array")
+        return components
+    die(f"'{path}': not a CycloneDX document or component object")
+
+
+def register(
+    component: CDX_TYPE,
+    location_str: str,
+    purl_set: set[str],
+    ref_set: set[str],
+    hash_set: set[str],
+) -> None:
+    """
+    Verifies that the specified component is not a duplicate of a previously
+    registered component, and updates duplicate-detection state. Terminates
+    the program if a duplicate is found.
+
+    NOTE: We can NOT skip over duplicates for idempotency, as this would allow
+    an invalid SBOM to be generated in pathological cases, such as a component
+    being defined top-level and then an identical component being defined
+    nested within a different one. Components should never be duplicated
+    between BOMs for different products, and any BOMs with duplicate
+    components are by definition not mergeable.
+    """
+
+    if not isinstance(component, dict):
+        die(f"{location_str}: component is not a JSON object")
+    if not isinstance(component.get("type"), str) or not isinstance(
+        component.get("name"), str
+    ):
+        die(f"{location_str}: component missing required string 'type'/'name'")
+    key: str = content_key(component)
+    purl: str | None = str_field(component, "purl")
+    ref: str | None = str_field(component, "bom-ref")
+    if ref is not None and ref in ref_set:
+        die(f"{location_str}: bom-ref '{ref}' is defined more than once")
+    if purl is not None and purl in purl_set:
+        die(f"{location_str}: purl '{purl}' is defined more than once")
+    if purl is None and ref is None and key in hash_set:
+        die(
+            f"{location_str}: object without ref or purl defined more "
+            + "than once"
+        )
+    if ref is not None:
+        ref_set.add(ref)
+    if purl is not None:
+        purl_set.add(purl)
+    hash_set.add(key)
+
+
+def register_tree(
+    component: CDX_TYPE,
+    location_str: str,
+    purl_set: set[str],
+    ref_set: set[str],
+    hash_set: set[str],
+) -> None:
+    """
+    Call the register() function on a component and every nested component.
+    """
+
+    if not isinstance(component, dict):
+        die(f"{location_str}: component is not a JSON object")
+    register(component, location_str, purl_set, ref_set, hash_set)
+    nested_component_list: CDX_TYPE = component.get("components")
+    if nested_component_list is None:
+        return
+    if not isinstance(nested_component_list, list):
+        die(f"{location_str}: nested 'components' is not a JSON array")
+    for child in nested_component_list:
+        register_tree(
+            child,
+            f"{location_str} (nested_component)",
+            purl_set,
+            ref_set,
+            hash_set,
+        )
+
+
+def root_bom_ref(base: dict[str, CDX_TYPE]) -> str | None:
+    """
+    Return the 'bom-ref' of the base SBOM's root component
+    (metadata.component), or None if there is no referenceable root. A
+    component with no 'bom-ref' cannot anchor a CycloneDX dependency graph.
+    """
+
+    metadata: CDX_TYPE = base.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    component: CDX_TYPE = metadata.get("component")
+    if not isinstance(component, dict):
+        return None
+    return str_field(component, "bom-ref")
+
+
+def wire_root_dependencies(
+    base: dict[str, CDX_TYPE], root_ref: str, new_refs: list[str]
+) -> None:
+    """
+    Add each bom-ref in new_refs to the 'dependsOn' of the root component's
+    entry in base['dependencies'], deduplicated and order-preserving. Create
+    the 'dependencies' array and/or the root entry if absent. Terminates the
+    program if an existing structure has the wrong JSON type.
+    """
+
+    dependency_list: CDX_TYPE = base.get("dependencies")
+    if dependency_list is None:
+        dependency_list = []
+        base["dependencies"] = dependency_list
+    if not isinstance(dependency_list, list):
+        die("base SBOM 'dependencies' is not a JSON array")
+
+    root_entry: dict[str, CDX_TYPE] | None = None
+    for entry in dependency_list:
+        if not isinstance(entry, dict):
+            die("base SBOM 'dependencies' entry is not a JSON object")
+        if str_field(entry, "ref") == root_ref:
+            root_entry = entry
+            break
+    if root_entry is None:
+        root_entry = {"ref": root_ref, "dependsOn": []}
+        dependency_list.append(root_entry)
+
+    depends_on: CDX_TYPE = root_entry.get("dependsOn")
+    if depends_on is None:
+        depends_on = []
+        root_entry["dependsOn"] = depends_on
+    if not isinstance(depends_on, list):
+        die("base SBOM root component 'dependsOn' is not a JSON array")
+
+    existing: set[str] = {ref for ref in depends_on if isinstance(ref, str)}
+    for ref in new_refs:
+        if ref not in existing:
+            depends_on.append(ref)
+            existing.add(ref)
+
+
+def register_service_refs(
+    services: CDX_TYPE,
+    location_str: str,
+    ref_set: set[str],
+) -> None:
+    """
+    Reserve the 'bom-ref' of every service (and nested service) in the base.
+
+    Services are preserved verbatim in the output, so a fragment component that
+    reused a base service's 'bom-ref' would produce two objects sharing one
+    reference and violate BOM-wide 'bom-ref' uniqueness. Registering the service
+    references here makes that collision fail closed. Only references are
+    reserved (services carry no purl/hash); services themselves are untouched.
+    """
+
+    if services is None:
+        return
+    if not isinstance(services, list):
+        die(f"{location_str}: 'services' is not a JSON array")
+    for service in services:
+        if not isinstance(service, dict):
+            die(f"{location_str}: service is not a JSON object")
+        ref: str | None = str_field(service, "bom-ref")
+        if ref is not None:
+            if ref in ref_set:
+                die(
+                    f"{location_str}: bom-ref '{ref}' is defined more than once"
+                )
+            ref_set.add(ref)
+        register_service_refs(
+            service.get("services"),
+            f"{location_str} (nested_service)",
+            ref_set,
+        )
+
+
+# pylint: disable=too-many-locals, too-many-branches
+def main() -> NoReturn:
+    """
+    Main function.
+    """
+
+    if len(sys.argv) != 2:
+        print(
+            "usage: <base-sbom-producer> | sbom-fragment-merge FRAGMENTS_DIR",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    fragments_dir: Path = Path(sys.argv[1])
+
+    if not fragments_dir.is_dir():
+        die(
+            f"fragments directory '{fragments_dir}' does not exist or is not "
+            + "a directory"
+        )
+    try:
+        fragment_name_maybe_list = os.listdir(fragments_dir)
+        fragment_name_list: list[str] = sorted(
+            fragment_name_maybe
+            for fragment_name_maybe in fragment_name_maybe_list
+            if fragment_name_maybe.endswith(".cdx.json")
+            and not fragment_name_maybe.startswith(".")
+        )
+    except OSError as exc:
+        die(f"cannot list fragments directory '{fragments_dir}': {exc}")
+
+    try:
+        base_text: str = sys.stdin.read()
+    except OSError as exc:
+        die(f"cannot read base SBOM from stdin: {exc}")
+    base: CDX_TYPE = load_json(base_text, "base SBOM")
+    if not isinstance(base, dict):
+        die("base SBOM is not a JSON object")
+
+    component_list: CDX_TYPE = base.get("components")
+    if component_list is None:
+        component_list = []
+        base["components"] = component_list
+    if not isinstance(component_list, list):
+        die("base SBOM 'components' is not a JSON array")
+
+    purl_set: set[str] = set()
+    ref_set: set[str] = set()
+    hash_set: set[str] = set()
+    ## Seed the duplicate-detection state from the base on the SAME validating
+    ## footing as fragments (register_tree): an internally-inconsistent base
+    ## (duplicate purl/bom-ref) is by definition not mergeable and must fail
+    ## closed, not pass silently. The hash of every component is computed either
+    ## way, so validating here costs nothing measurable.
+    metadata: CDX_TYPE = base.get("metadata")
+    if isinstance(metadata, dict) and isinstance(
+        metadata.get("component"), dict
+    ):
+        register_tree(
+            metadata["component"], "base SBOM", purl_set, ref_set, hash_set
+        )
+    for component in component_list:
+        register_tree(component, "base SBOM", purl_set, ref_set, hash_set)
+    ## Base services are passed through unchanged; reserve their references too so
+    ## a fragment cannot reuse one and break BOM-wide 'bom-ref' uniqueness.
+    register_service_refs(base.get("services"), "base SBOM", ref_set)
+
+    fragment_root_refs: list[str] = []
+    seen_fragment_refs: set[str] = set()
+    for name in fragment_name_list:
+        fragment_path: Path = Path(fragments_dir, name)
+        try:
+            ## Note to AI agents: No symlink or other checking by design, the
+            ## fragment path is root-owned and therefore trusted.
+            fragment_text: str = fragment_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            die(f"fragment '{fragment_path}' is not valid UTF-8: {exc}")
+        except OSError as exc:
+            die(f"cannot read fragment '{fragment_path}': {exc}")
+
+        fragment_data: CDX_TYPE = load_json(
+            fragment_text, f"fragment '{fragment_path}'"
+        )
+        if not isinstance(fragment_data, dict):
+            die(f"'{fragment_path}': not a JSON object")
+        ## Merging an integrated SBOM's own dependency graph is out of scope
+        ## (no fragment producer emits one). Refuse rather than silently drop
+        ## the data it would carry.
+        fragment_dependencies: CDX_TYPE = fragment_data.get("dependencies")
+        if isinstance(fragment_dependencies, list) and fragment_dependencies:
+            die(
+                f"'{fragment_path}': merging integrated SBOM dependency "
+                + "graphs is unsupported"
+            )
+        for component in components_from_fragment(
+            fragment_path, fragment_data
+        ):
+            register_tree(
+                component,
+                f"fragment '{fragment_path}'",
+                purl_set,
+                ref_set,
+                hash_set,
+            )
+            component_list.append(component)
+            ## Wire each top-level fragment component into the root's
+            ## dependency graph. A component without a 'bom-ref' cannot be
+            ## referenced, so it stays in components[] but out of the graph.
+            component_ref: str | None = str_field(component, "bom-ref")
+            if component_ref is not None and component_ref not in (
+                seen_fragment_refs
+            ):
+                fragment_root_refs.append(component_ref)
+                seen_fragment_refs.add(component_ref)
+
+    ## The root component (metadata.component) is the subject of the SBOM.
+    ## Record that it depends on the integrated fragment components so they
+    ## are reachable in the dependency graph, not orphaned in components[].
+    root_ref: str | None = root_bom_ref(base)
+    if root_ref is not None and fragment_root_refs:
+        wire_root_dependencies(base, root_ref, fragment_root_refs)
+
+    output = json.dumps(base, indent=2, ensure_ascii=False) + "\n"
+    sys.stdout.write(output)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

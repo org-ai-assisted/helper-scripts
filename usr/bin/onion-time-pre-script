@@ -15,7 +15,7 @@ shopt -s shift_verbose
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/use_leaprun.sh
 
 if [ "${use_leaprun}" = 'yes' ]; then
-  "${leaprun_exe}" onion-time-pre-script
+  leaprun onion-time-pre-script
 else
   sudo -u sdwdate /usr/libexec/helper-scripts/onion-time-pre-script
 fi
