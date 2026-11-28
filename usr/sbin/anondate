@@ -272,14 +272,16 @@ tor_cert_lifetime_valid() {
    ## REMINDER: TOR_LOG is per-boot (cat /run/tor/log or journalctl --boot) and is
    ## NOT cleared when Tor starts, so a stale "Certificate not yet valid / already
    ## expired" warning from before an intra-boot clock fix still matches here and
-   ## over-reports "cert invalid". Harmless: tor_cert_valid_after parses the "runs
-   ## from" date, which is the peer's TLS link-cert notBefore. Tor never post-dates
-   ## notBefore ("Don't actually start in the future!", tor src/lib/tls/x509.c), so
-   ## it is at or before real now for honestly-clocked peers; anondate-set is
-   ## forward-only + minimum-time floored, and sets the clock from a cert lifetime
-   ## at most once per boot (the tor_certificate_lifetime_set stamp; the consensus
-   ## path is not so guarded). So the clock can only move forward toward, never
-   ## past, real time.
+   ## over-reports "cert invalid". Harmless for this STALE-LOG false positive:
+   ## tor_cert_valid_after parses the "runs from" date = the peer's TLS link-cert
+   ## notBefore, which Tor never post-dates ("Don't actually start in the future!",
+   ## tor src/lib/tls/x509.c), so for honestly-clocked peers it is at or before real
+   ## now; anondate-set is forward-only + minimum-time floored and sets from a cert
+   ## lifetime at most once per boot (the tor_certificate_lifetime_set stamp; the
+   ## consensus path is not so guarded). This does NOT make cert-derived time
+   ## trusted: like the consensus (see anondate-get's replay REMINDER) it is a
+   ## bounded, integrity-unguaranteed bootstrap guess under an on-path attacker
+   ## (whonix.org/wiki/Dev/TimeSync 7.3.11); sdwdate is the authenticated corrector.
 
    ## Example Tor log:
    ## Sep 03 10:32:59.000 [warn] Certificate already expired. Either their clock is set wrong, or your clock is wrong.
