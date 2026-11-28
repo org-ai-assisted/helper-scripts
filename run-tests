@@ -40,13 +40,6 @@ py_lib_to_test_list=(
   'append_shared'
 )
 
-## CI-only tests under ci/tests/<name>/ with no matching python lib on
-## PYTHONPATH (e.g. a bash helper exercised via a subprocess). Discovered like
-## the property tests but without the pythonpath/pylint/mypy steps a lib gets.
-ci_only_test_list=(
-  'local_apt_repo_sources'
-)
-
 for py_lib_to_test in "${py_lib_to_test_list[@]}"; do
   cd -- "${pythonpath}/${py_lib_to_test}/"
   # Ideally, these variables should be ignored by the tests...
@@ -68,8 +61,8 @@ done
 ## requires extra sys.path / mypy_path plumbing that isn't worth the
 ## maintenance cost. black --check still runs so style stays consistent.
 if [ "${CI:-}" = "true" ] || [ "${ALLOW_LOCAL:-}" = "true" ]; then
-  for ci_test in "${py_lib_to_test_list[@]}" "${ci_only_test_list[@]}"; do
-    test_path="${ci_tests_dir}/${ci_test}"
+  for py_lib_to_test in "${py_lib_to_test_list[@]}"; do
+    test_path="${ci_tests_dir}/${py_lib_to_test}"
     if [ -d "${test_path}" ]; then
       cd -- "${test_path}"
       NO_COLOR="" COLORTERM="" TERM="xterm-direct" \

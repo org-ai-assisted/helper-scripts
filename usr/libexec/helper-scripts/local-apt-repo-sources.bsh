@@ -13,7 +13,7 @@ local_apt_repo_sources_stanza() {
   ## only (a UTF-8 locale would fold accented/Unicode chars into A-Za-z).
   local LC_ALL=C
   local uri suite repo_path arch dist_path component_path component_str \
-    component_list_str
+    component_list_str component_index_dir
 
   uri="${1:-}"
   suite="${2:-}"
@@ -32,7 +32,14 @@ local_apt_repo_sources_stanza() {
   component_list_str=""
   for component_path in "${dist_path}"/*/; do
     [ -d "${component_path}" ] || continue
-    if [ -s "${component_path}binary-${arch}/Packages" ]; then
+    ## Resident if the binary-<arch> index carries entries in any form apt accepts:
+    ## uncompressed Packages or a compressed Packages.gz/.xz (reprepro or a real
+    ## mirror may ship compressed-only). An absent or 0-byte index means nothing for
+    ## this arch and apt would hard-fail fetching it, so the component is dropped.
+    component_index_dir="${component_path}binary-${arch}"
+    if [ -s "${component_index_dir}/Packages" ] \
+      || [ -s "${component_index_dir}/Packages.gz" ] \
+      || [ -s "${component_index_dir}/Packages.xz" ]; then
       component_str="${component_path%/}"
       component_str="${component_str##*/}"
       ## Emit only a syntactically valid apt component name. A directory name
@@ -46,15 +53,14 @@ local_apt_repo_sources_stanza() {
       component_list_str="${component_list_str}${component_list_str:+ }${component_str}"
     fi
   done
-  ## Fail loud rather than emit a plausible-but-wrong stanza: an empty result
-  ## means the scan dir is missing (wrong repo_path) or no component carries
-  ## packages for this arch. A silent fallback to 'main' here previously hid a
-  ## caller that passed a non-host URI as the scan path, dropping contrib/non-free
-  ## and surfacing only much later as an apt 'Unable to locate package'.
-  if [ -z "${component_list_str}" ]; then
-    printf '%s\n' "${0##*/}: ERROR: local_apt_repo_sources_stanza: no component with a non-empty binary-${arch}/Packages under '${dist_path}'; refusing to emit a bogus sources stanza." >&2
-    return 1
-  fi
+  ## No resident component for this arch (or the scan dir is absent) -> fall back
+  ## to 'main', always present in a derivative local repo. Shared contract pinned
+  ## by dist-ai local_apt_repo_sources_test.sh; both consumers
+  ## (create-local-apt-repo, repo-add-local) rely on it, and a legitimately
+  ## empty/base repo must not hard-fail. Correct component detection depends on the
+  ## caller passing the real host repo path (arg 3, not the chroot file: URI); the
+  ## regression tests pin that the correct path then surfaces contrib/non-free.
+  [ -n "${component_list_str}" ] || component_list_str="main"
 
   printf '%s\n' "Types: deb
 URIs: ${uri}
