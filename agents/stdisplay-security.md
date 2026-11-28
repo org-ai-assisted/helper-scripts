@@ -25,11 +25,28 @@ excluded despite being render-only:
 
 Their resets (`27`/`28`) stay -- they only reveal text.
 
-Not defended (inherent limitation, documented not fixed): low-contrast or
-matching foreground/background COLOR (e.g. `ESC[30;40m`, `ESC[38;5;0;48;5;0m`,
-`ESC[38;2;0;0;0;48;2;0;0;0m`) can hide text too. It is not reliably detectable
-or preventable -- the viewer's real terminal background is unknown to the
-sanitizer, so no color pair can be proven invisible (or proven safe). Blocking
-color to chase contrast would break legitimate color without closing the gap. A
-caller that must guarantee legibility of untrusted text disables SGR entirely
-(`NO_COLOR` / `TERM=dumb`), which stdisplay honors.
+Not defended (documented, not blocked): COLOR can hide text by rendering it on a
+matching background. Two sub-cases differ in detectability:
+
+- EXPLICIT same-encoding foreground+background (e.g. `ESC[38;5;5;48;5;5m`,
+  `ESC[38;2;1;2;3;48;2;1;2;3m`, `ESC[30;40m`) IS reliably invisible AND, in
+  principle, detectable by parsing -- both sides carry the same value, so it
+  does not depend on the viewer's background.
+- Foreground alone matching the viewer's CONFIGURED background, or a
+  cross-encoding pair that coincides only under the terminal's (unknown) palette
+  (e.g. `ESC[30m` foreground vs `ESC[48;5;0m` background), is NOT detectable
+  here.
+
+Still not blocked, deliberately: stripping only the detectable same-encoding
+subset is a partial gate that gives false assurance while the undetectable
+vectors above stay open; detecting even that subset needs a semantic SGR parser
+(reordering, zero-padding, colon/semicolon, split sequences), not the clean
+pure-regex allow-list; and it breaks legitimate fg==bg use. The robust guarantee
+for untrusted text is to disable SGR entirely (`NO_COLOR` / `TERM=dumb`), which
+stdisplay honors.
+
+Kept despite a weaker spoof argument: blink (`5`) and strike (`9`) leave text
+fully READABLE -- blink flickers it, strike only decorates it -- so they are not
+the hide/swap class that `7`/`8` were. The "styling could editorialize a
+verdict" concern applies equally to color, bold and italic; it is not specific
+to these two codes, so they stay allowed.
