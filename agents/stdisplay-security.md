@@ -45,8 +45,14 @@ pure-regex allow-list; and it breaks legitimate fg==bg use. The robust guarantee
 for untrusted text is to disable SGR entirely (`NO_COLOR` / `TERM=dumb`), which
 stdisplay honors.
 
-Kept despite a weaker spoof argument: blink (`5`) and strike (`9`) leave text
-fully READABLE -- blink flickers it, strike only decorates it -- so they are not
-the hide/swap class that `7`/`8` were. The "styling could editorialize a
-verdict" concern applies equally to color, bold and italic; it is not specific
-to these two codes, so they stay allowed.
+Related precision gap (render-only, accepted): the 8-bit color index is
+allow-listed as 0-255 at any depth `>= 88`, so an 88-color terminal (indices
+0-87) is also sent indices 88-255. Out-of-gamut indices are terminal-defined
+(ignored or clamped) and render-only -- not an injection vector -- so the
+allow-list is not narrowed per depth.
+
+Kept despite a weaker spoof argument: faint (`2`), blink (`5`) and strike (`9`)
+leave text READABLE -- faint dims it, blink flickers it, strike only decorates
+it -- so they are not the hide/swap class that `7`/`8` were. The "styling could
+editorialize a verdict" (or "too dim to read") concern applies equally to color,
+bold and italic; it is not specific to these codes, so they stay allowed.
