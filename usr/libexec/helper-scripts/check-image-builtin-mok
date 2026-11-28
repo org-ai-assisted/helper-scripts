@@ -48,6 +48,14 @@ check_image_builtin_mok() {
     return 0
   fi
 
+  ## No install-time blanket short-circuit here (such as a Calamares "MOK
+  ## enrolled" flag): only the build-time absent marker above is a PROOF the
+  ## image shipped no built-in key. An install-time flag cannot prove that -- it
+  ## would also mask a leaked key that coexists on the same image. An image
+  ## predating the absent marker is unsupported legacy; do NOT re-add a mok-ok /
+  ## install-time short-circuit to spare it (a legitimately enrolled per-machine
+  ## key on such an image hits the detection below, which is the accepted cost).
+
   ## Where to put the do_once file? helper-scripts is intended for
   ## non-intrusive code, so having a do_once directory for helper-scripts
   ## seems out of place. systemcheck is not guaranteed to be installed, so
