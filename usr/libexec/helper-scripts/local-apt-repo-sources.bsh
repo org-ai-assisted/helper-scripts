@@ -9,6 +9,9 @@
 ## metadata, outputs a deb822 sources stanza that will tell apt to use that
 ## repository.
 local_apt_repo_sources_stanza() {
+  ## LC_ALL=C so the component-name charset check below matches ASCII ranges
+  ## only (a UTF-8 locale would fold accented/Unicode chars into A-Za-z).
+  local LC_ALL=C
   local uri suite repo_path arch dist_path component_path component_str \
     component_list_str
 
@@ -32,6 +35,14 @@ local_apt_repo_sources_stanza() {
     if [ -s "${component_path}binary-${arch}/Packages" ]; then
       component_str="${component_path%/}"
       component_str="${component_str##*/}"
+      ## Emit only a syntactically valid apt component name. A directory name
+      ## with whitespace/newline/colon would otherwise inject deb822 fields
+      ## into this Trusted stanza (e.g. a forged Suites: overriding the suite).
+      case ${component_str} in
+        '' | *[!A-Za-z0-9._+-]*)
+          continue
+          ;;
+      esac
       component_list_str="${component_list_str}${component_list_str:+ }${component_str}"
     fi
   done

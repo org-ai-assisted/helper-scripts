@@ -50,12 +50,14 @@ def _make_repo(tmp: pathlib.Path, components: dict[str, str]) -> pathlib.Path:
 
 def _run_stanza(uri: str, suite: str, repo_path: str, arch: str):
     """Source the generator and invoke it; return (returncode, stdout, stderr)."""
+    ## Pass every value as a positional arg ($1..$5), never interpolated into
+    ## the script text, so a value cannot inject shell into the bash -c program.
     script = (
-        f'source -- "{_BSH}"\n'
-        f'local_apt_repo_sources_stanza "{uri}" "{suite}" "{repo_path}" "{arch}"\n'
+        'source -- "$1"\n'
+        'local_apt_repo_sources_stanza "$2" "$3" "$4" "$5"\n'
     )
     proc = subprocess.run(
-        ["bash", "-c", script],
+        ["bash", "-c", script, "bash", str(_BSH), uri, suite, repo_path, arch],
         capture_output=True,
         text=True,
         check=False,
@@ -135,6 +137,30 @@ class TestLocalAptRepoSourcesStanza(unittest.TestCase):
             rc, out, err = _run_stanza(_CHROOT_URI, _SUITE, str(repo), _ARCH)
             self.assertEqual(rc, 0, msg=err)
             self.assertEqual(_components(out), ["main"])
+
+    def test_malicious_component_name_not_injected(self) -> None:
+        """
+        A component directory whose name embeds a newline + a forged deb822
+        field must be skipped, not copied verbatim into the Trusted stanza
+        (which would let it override Suites: and point apt elsewhere).
+        """
+        with tempfile.TemporaryDirectory() as tmp_name:
+            repo = _make_repo(
+                pathlib.Path(tmp_name),
+                {
+                    "main": "Package: dist-base-files\n",
+                    "evil\nSuites: trixie": "Package: pwned\n",
+                },
+            )
+            rc, out, err = _run_stanza(_CHROOT_URI, _SUITE, str(repo), _ARCH)
+            self.assertEqual(rc, 0, msg=err)
+            self.assertEqual(_components(out), ["main"])
+            ## Exactly one Suites field, still the requested suite.
+            suites = [
+                ln for ln in out.splitlines() if ln.startswith("Suites:")
+            ]
+            self.assertEqual(suites, [f"Suites: {_SUITE}"])
+            self.assertNotIn("trixie", out)
 
 
 if __name__ == "__main__":
