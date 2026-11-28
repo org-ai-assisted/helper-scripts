@@ -57,7 +57,8 @@ br_add() {
 }
 
 br_add_to_file() {
-  local file_name br_tmp line
+  local file_name br_tmp line dir_part
+
   file_name="$1"
 
   test -f "${file_name}"
@@ -69,14 +70,33 @@ br_add_to_file() {
   ## the destination instead of following it, so root never writes through an
   ## attacker's link -- the bash-reachable equivalent of O_NOFOLLOW, no helper
   ## binary, safe for ANY caller regardless of the destination directory.
-  ## The temp basename is SHORT and independent of the input basename: a template
-  ## built from "${file_name}" overflows NAME_MAX (mktemp fails) for a long but
-  ## otherwise valid input basename.
-  br_tmp="$(mktemp -- "$(dirname -- "${file_name}")/.br.XXXXXX")"
-  while IFS= read -r line || [ -n "${line}" ]; do
-    printf '%s\n' "${line}<br />"
-  done <"${file_name}" >"${br_tmp}"
-  mv --force --no-target-directory -- "${br_tmp}" "${file_name}_br"
+  ##
+  ## The temp basename is SHORT and independent of the input basename (a template
+  ## built from "${file_name}" overflows NAME_MAX, so mktemp fails, for a long
+  ## but otherwise valid input basename). The directory is taken by BYTE-EXACT
+  ## parameter expansion, NOT $(dirname ...): command substitution strips a
+  ## trailing newline, which would retarget the temp OUTSIDE the intended
+  ## directory for a newline-named parent and defeat the same-directory guarantee.
+  if [ "${file_name}" = "${file_name##*/}" ]; then
+    dir_part="."
+  else
+    dir_part="${file_name%/*}"
+  fi
+  br_tmp="$(mktemp -- "${dir_part}/.br.XXXXXX")" || return 1
+  if ! {
+    while IFS= read -r line || [ -n "${line}" ]; do
+      printf '%s\n' "${line}<br />"
+    done <"${file_name}" >"${br_tmp}"
+  }; then
+    safe-rm --force -- "${br_tmp}" 2>/dev/null || true
+    return 1
+  fi
+  ## A basename >= 253 bytes makes "${file_name}_br" exceed NAME_MAX; the rename
+  ## then fails -- remove the temp so a 0600 file with the content never leaks.
+  if ! mv --force --no-target-directory -- "${br_tmp}" "${file_name}_br"; then
+    safe-rm --force -- "${br_tmp}" 2>/dev/null || true
+    return 1
+  fi
 }
 
 read_integer_file() {
