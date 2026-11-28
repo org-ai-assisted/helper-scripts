@@ -269,14 +269,15 @@ ${vendcons}"
 }
 
 tor_cert_lifetime_valid() {
-   ## REMINDER: TOR_LOG is per-boot (cat /run/tor/log or journalctl --boot) and
-   ## is NOT cleared when Tor starts, so a "Certificate already expired / not yet
-   ## valid" warning logged earlier this boot (before an intra-boot clock fix)
-   ## still matches below and over-reports "cert invalid" (exit 1). Acceptable:
-   ## the clock cannot be harmed -- the only consumer (anondate-get) floors any
-   ## resulting time via minimum_time_check and anondate-set is forward-only, and
-   ## tor_cert_valid_after already takes the freshest match. Log-time filtering is
-   ## not viable (the timestamps live in the very clock under validation).
+   ## REMINDER: TOR_LOG is per-boot (cat /run/tor/log or journalctl --boot) and is
+   ## NOT cleared when Tor starts, so a stale "Certificate not yet valid / already
+   ## expired" warning from before an intra-boot clock fix still matches here and
+   ## over-reports "cert invalid". Harmless: tor_cert_valid_after parses the "runs
+   ## from" date, which is the peer's TLS link-cert notBefore. Tor never post-dates
+   ## notBefore ("Don't actually start in the future!", tor src/lib/tls/x509.c), so
+   ## it is at or before real now for honestly-clocked peers; anondate-set is
+   ## forward-only + minimum-time floored and fires at most once per boot. So the
+   ## clock can only move forward toward, never past, real time.
 
    ## Example Tor log:
    ## Sep 03 10:32:59.000 [warn] Certificate already expired. Either their clock is set wrong, or your clock is wrong.

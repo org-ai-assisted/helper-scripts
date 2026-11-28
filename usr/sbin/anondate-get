@@ -152,11 +152,14 @@ else
    output_cmd "WARNING: Tor bootstrap not done."
 fi
 
-## REMINDER: a cross-check that the Tor cert valid-after is later than the Tor
-## consensus middle range (to reject a stale consensus) is unnecessary here. A
-## stale consensus time cannot be applied: every candidate below runs through
-## minimum_time_check, and the sole consumer (anondate-set) is forward-only, so
-## it never moves the clock backward to a past consensus time.
+## REMINDER: the cert-valid-after-vs-middle-range cross-check (to reject a stale
+## consensus) is unnecessary. The middle-range comes from an authority-SIGNED
+## consensus (not attacker-forgeable), and anondate-set is forward-only +
+## minimum-time floored, so a stale (past) consensus can only nudge a behind clock
+## forward toward real time, never backward or below the floor; sdwdate then
+## refines it. The cross-check is also self-defeating offline: a cert fresher than
+## the consensus only exists if Tor fetched it online, when it would also have
+## fetched a fresh consensus, overwriting the stale one.
 
 output_cmd "INFO: Attempting to determine Tor consensus time middle range..."
 
