@@ -312,6 +312,59 @@ class TestSTDisplay(TestCase):
         ]
         self.run_stdisplay_cases(cases, sgr=2**24, exclude_sgr=exclude_sgr)
 
+    ## Exact single-field SGR allow-list at >=88-color depth, pinned so any
+    ## drift in the attribute policy is caught without hand-picked cases. The
+    ## old allow-list passed conceal (8) and inverse (7); excluding them here
+    ## makes this the regression guard -- it FAILS on the old regex.
+    SGR_SINGLE_FIELD_ALLOWED: set[int] = (
+        ## reset, bold, faint, italic, underline, slow-blink, strike.
+        ## 6 (rapid blink) was never allowed; 7 (inverse) and 8 (conceal) are
+        ## excluded on purpose -- render-only but they hide/swap visible text.
+        {0, 1, 2, 3, 4, 5, 9}
+        | {21, 22, 23, 24, 25, 27, 28, 29}  ## attribute resets (incl. 27/28)
+        | set(range(30, 38))
+        | {39}  ## 3-bit foreground + default foreground
+        | set(range(40, 48))
+        | {49}  ## 3-bit background + default background
+        | set(range(90, 98))  ## aixterm bright foreground
+        | set(range(100, 108))  ## aixterm bright background
+    )
+
+    def test_stdisplay_sgr_single_field_allow_list(self) -> None:
+        """
+        Pin the exact single-field SGR codes that survive at >=88-color depth.
+
+        Characterization test over the whole 0-255 field space: each code is
+        allowed iff it is in SGR_SINGLE_FIELD_ALLOWED. Guards allow-list drift
+        in either direction -- an over-permit (the conceal/inverse slip) or an
+        accidental over-strip. Multi-field extended color (38;5;N etc.) is
+        covered by the other SGR tests.
+        """
+        for sgr in (88, 2**24):
+            for code in range(0, 256):
+                seq = f"\x1b[{code}m"
+                allowed = code in self.SGR_SINGLE_FIELD_ALLOWED
+                expected = seq if allowed else f"_[{code}m"
+                with self.subTest(sgr=sgr, code=code, allowed=allowed):
+                    self.assert_stdisplay(seq, expected, sgr=sgr)
+
+    def test_stdisplay_sgr_spoofing_attrs_stripped(self) -> None:
+        """
+        Conceal (8) and inverse (7) must not survive at any color depth, even
+        combined with otherwise-valid fields -- one invalid field invalidates
+        the whole SGR sequence. Their resets (27/28) stay: they only reveal.
+        """
+        cases = [
+            ("\x1b[8m", "_[8m"),
+            ("\x1b[7m", "_[7m"),
+            ("\x1b[7;8m", "_[7;8m"),
+            ("\x1b[8;31mx\x1b[m", "_[8;31mx\x1b[m"),
+            ("\x1b[27;28m", "\x1b[27;28m"),
+            ("\x1b[9m", "\x1b[9m"),
+        ]
+        for sgr in (88, 2**24):
+            self.run_stdisplay_cases(cases, sgr=sgr)
+
     def test_non_sgr_escape_sequences(self) -> None:
         """
         Ensure sequences outside the SGR allowlist are neutralized.

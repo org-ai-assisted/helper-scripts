@@ -216,18 +216,35 @@ def get_sgr_pattern(
         pal_16bit = r"0*(1|9[0-7]|10[0-7])"
         sgr_combo = rf"{sgr_combo}|{pal_16bit}"
     if sgr >= 88:  ## 88 and 256 colors
-        ## 88 colors is not well documented but the few terminals that support
-        ## it are very common (xterm, rxvt, Eterm). The terminfo library links
-        ## the 88 variant to the 256 one with the 'use=' keyword. The "real" 88
-        ## color layout is not implemented as the commentator could not
-        ## identify it.
+        ## ECMA-48 SGR display attributes (faint/italic/underline/blink/strike,
+        ## their resets, default fg/bg), NOT a color palette. Identical across
+        ## 88- and 256-color builds; only the extended-color index range
+        ## differs, and that index is allow-listed by pal_8bit, not here. The
+        ## 88-color palette layout is documented, not unknown. Quote (Dickey,
+        ## bug-ncurses, link below):
+        ##   > the 88-color layout was intended to fit with the same idea as in
+        ##   > 256-colors: 16-color set, along with a cube and then a grayscale
+        ##   > set
+        ## It is irrelevant here regardless: we allow-list the numeric index,
+        ## never its RGB mapping.
         ## https://lists.gnu.org/archive/html/bug-ncurses/2020-03/msg00025.html
-        ## TODO: verify which attributes should stay. # pylint: disable=fixme
-        pal_88color = r"0*([2-5]|[7-9]|2[1-5]|2[7-9]|39|49)"
+        ## Pure SGR (final byte 'm') is render-only: it cannot move the cursor,
+        ## run a command, reach the clipboard, or make the terminal reply, so
+        ## allow-listing an attribute number is injection-safe. Attribute names
+        ## per xterm ctlseqs, "Character Attributes (SGR)":
+        ## https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+        ## Conceal (8) and inverse (7) are OMITTED: render-only, but they hide
+        ## or swap visible text, defeating a sanitizer meant to keep untrusted
+        ## text legible. Their resets 27/28 stay (they only reveal text).
+        ## Quote (xterm ctlseqs, "Character Attributes (SGR)"; ASCII '->' for
+        ## the page's '=>' glyph):
+        ##   > Ps = 7  ->  Inverse, VT100.
+        ##   > Ps = 8  ->  Invisible, i.e., hidden, ECMA-48 2nd, VT300.
+        sgr_attr = r"0*([2-59]|2[1-5]|2[7-9]|39|49)"
         range_8bit = r"0*([0-1]?[0-9]?[0-9]|2[0-4][0-9]|25[0-5])"
         pal_8bit = rf"0*[3-4]8;0*5;{range_8bit}"
         pal_8bit_std = rf"0*[3-4]8:0*5:{range_8bit}"
-        sgr_combo = rf"{sgr_combo}|{pal_88color}|{pal_8bit}|{pal_8bit_std}"
+        sgr_combo = rf"{sgr_combo}|{sgr_attr}|{pal_8bit}|{pal_8bit_std}"
     if sgr >= 2**24:  ## 16777216 colors
         pal_24bit = rf"0*[3-4]8;0*2;{range_8bit};{range_8bit};{range_8bit}"
         pal_24bit_std = rf"0*[3-4]8:0*2:{range_8bit}:{range_8bit}:{range_8bit}"
