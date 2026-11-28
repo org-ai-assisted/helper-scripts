@@ -48,12 +48,6 @@ check_image_builtin_mok() {
     return 0
   fi
 
-  ## Calamares may set up a MOK during installation. It will drop a mok-ok flag
-  ## when it does this.
-  if [ -f "${legacy_dist_do_once_dir}/mok-ok" ]; then
-    return 0
-  fi
-
   ## Where to put the do_once file? helper-scripts is intended for
   ## non-intrusive code, so having a do_once directory for helper-scripts
   ## seems out of place. systemcheck is not guaranteed to be installed, so
