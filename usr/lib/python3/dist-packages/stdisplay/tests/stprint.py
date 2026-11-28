@@ -70,14 +70,20 @@ class TestSTPrintShell(unittest.TestCase):
         """
         test_dir = os.path.dirname(os.path.abspath(__file__))
         script_dir = os.path.dirname(test_dir)
-        stprint_absolute_path = "../../../../bin/stprint"
-        stprint_absolute_path = str(Path(stprint_absolute_path).resolve())
+        ## Resolve the stprint CLI anchored to this file, not the caller's CWD.
+        ## Layout: <root>/usr/lib/python3/dist-packages/stdisplay/tests/<this>;
+        ## parents[5] is <root>/usr, so the binary is <root>/usr/bin/stprint.
+        stprint_path = str(
+            Path(__file__).resolve().parents[5] / "bin" / "stprint"
+        )
+        if not os.path.exists(stprint_path):
+            self.fail(f"stprint binary not found at {stprint_path}")
         input_data = ""
         if stdin:
-            command = [stprint_absolute_path]
+            command = [stprint_path]
             input_data = text
         else:
-            command = [stprint_absolute_path, text]
+            command = [stprint_path, text]
 
         ## Avoid tester environment from affecting tests, such as CI having
         ## TERM=dumb, but also allow us testing if RegEx is correct
