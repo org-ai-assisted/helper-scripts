@@ -28,11 +28,26 @@ source "${HELPER_SCRIPTS_PATH:-}"/usr/sbin/shim-signed-mok-setup
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.bsh
 # shellcheck source=./secure_boot_enabled_check.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/secure_boot_enabled_check.bsh
+## sets: 'image_builtin_mok_absent_marker_basename'
+# shellcheck source=./legacy_dist_do_once_markers.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/legacy_dist_do_once_markers.bsh
 
 legacy_dist_do_once_dir='/var/lib/legacy-dist/do_once'
 efi_sysfs_dir='/sys/firmware/efi'
 
 check_image_builtin_mok() {
+  ## The image build drops this marker after PROVING it shipped no built-in MOK
+  ## key (initializer-dist chroot-scripts-post.d/20_sanity_checks). On such an
+  ## image any MOK key present was therefore generated per-machine at runtime and
+  ## is legitimate -- never a shared key leaked through the image -- so there is
+  ## nothing to detect. Older images lack this marker and fall through to the
+  ## detection below. Unlike the version_1 do_once marker, this one is NOT bumped
+  ## when the detection logic versions, because a provably key-free image stays
+  ## key-free regardless of the detection version.
+  if [ -f "${legacy_dist_do_once_dir}/${image_builtin_mok_absent_marker_basename}" ]; then
+    return 0
+  fi
+
   ## Calamares may set up a MOK during installation. It will drop a mok-ok flag
   ## when it does this.
   if [ -f "${legacy_dist_do_once_dir}/mok-ok" ]; then
