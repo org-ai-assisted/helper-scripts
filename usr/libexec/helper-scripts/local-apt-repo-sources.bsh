@@ -35,7 +35,15 @@ local_apt_repo_sources_stanza() {
       component_list_str="${component_list_str}${component_list_str:+ }${component_str}"
     fi
   done
-  [ -n "${component_list_str}" ] || component_list_str="main"
+  ## Fail loud rather than emit a plausible-but-wrong stanza: an empty result
+  ## means the scan dir is missing (wrong repo_path) or no component carries
+  ## packages for this arch. A silent fallback to 'main' here previously hid a
+  ## caller that passed a non-host URI as the scan path, dropping contrib/non-free
+  ## and surfacing only much later as an apt 'Unable to locate package'.
+  if [ -z "${component_list_str}" ]; then
+    printf '%s\n' "${0##*/}: ERROR: local_apt_repo_sources_stanza: no component with a non-empty binary-${arch}/Packages under '${dist_path}'; refusing to emit a bogus sources stanza." >&2
+    return 1
+  fi
 
   printf '%s\n' "Types: deb
 URIs: ${uri}
