@@ -34,12 +34,17 @@ command -v sort >/dev/null
 ## options such as for example '--recursive'. It remains the responsibility of
 ## the user to use end-of-options.
 
-## stdin support: with no path arguments the four sequential greps below would
-## each try to read the same pipe, but only the first can consume it -- the rest
-## see EOF and silently miss trojan codepoints (third grep) and NUL / ASCII
-## control bytes (fourth). Slurp stdin into a tempfile and scan that instead.
+## stdin support: when stdin is the input, the four sequential greps below
+## would each try to read the same pipe, but only the first can consume it --
+## the rest see EOF and silently miss trojan codepoints (third grep) and NUL /
+## ASCII control bytes (fourth), so the scanner would report "clean" on a
+## suspicious stream. Buffer stdin into a tempfile and scan that file instead.
 ## A tempfile, not a variable: bash drops NUL bytes from variables and the
 ## fourth grep scans for NULs; pipes are not seekable, so we cannot rewind.
+##
+## stdin is the input for the no-path-operand spellings: no arguments at all,
+## or only the stdin operands '-' / '--'. A '-' mixed with real paths is NOT
+## buffered (grep still scans the real paths); pipe stdin on its own.
 stdin_tmpfile=""
 cleanup() {
   if [ -n "${stdin_tmpfile}" ]; then
@@ -47,10 +52,32 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
-if [ "$#" -eq 0 ]; then
-  stdin_tmpfile="$(mktemp)"
+
+stdin_mode="yes"
+for arg in "$@"; do
+  case "${arg}" in
+    -|--)
+      ## stdin spelling; keep scanning the remaining operands.
+      ;;
+    *)
+      ## a real path or grep option: grep reads files, not the pipe.
+      stdin_mode="no"
+      break
+      ;;
+  esac
+done
+
+if [ "${stdin_mode}" = "yes" ]; then
+  ## Fail distinctly (exit 2, the error code) if the buffer cannot be made:
+  ## exit 1 would be indistinguishable from "scanned, nothing found".
+  if ! stdin_tmpfile="$(mktemp)"; then
+    printf '%s\n' "$0: ERROR: could not create tempfile to buffer stdin." >&2
+    exit 2
+  fi
   cat > "${stdin_tmpfile}"
-  set -- "${stdin_tmpfile}"
+  ## Pass the buffer after '--' so a tempfile path that looks like a grep
+  ## option (e.g. a relative TMPDIR) is treated as the file operand.
+  set -- -- "${stdin_tmpfile}"
 fi
 
 ## --binary-files=text - required to find backspace and null character
