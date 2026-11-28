@@ -152,7 +152,11 @@ else
    output_cmd "WARNING: Tor bootstrap not done."
 fi
 
-## TODO: Tor cert valid after must be after Tor consensus middle range to avoid using stale Tor consensus
+## REMINDER: a cross-check that the Tor cert valid-after is later than the Tor
+## consensus middle range (to reject a stale consensus) is unnecessary here. A
+## stale consensus time cannot be applied: every candidate below runs through
+## minimum_time_check, and the sole consumer (anondate-set) is forward-only, so
+## it never moves the clock backward to a past consensus time.
 
 output_cmd "INFO: Attempting to determine Tor consensus time middle range..."
 

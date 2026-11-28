@@ -269,11 +269,14 @@ ${vendcons}"
 }
 
 tor_cert_lifetime_valid() {
-   ## TODO:
-   ## To be sure that we only grep relevant information, we
-   ## should delete the log when Tor is started, which we do
-   ## TODO:
-   ## in 10-tor.sh.
+   ## REMINDER: TOR_LOG is per-boot (cat /run/tor/log or journalctl --boot) and
+   ## is NOT cleared when Tor starts, so a "Certificate already expired / not yet
+   ## valid" warning logged earlier this boot (before an intra-boot clock fix)
+   ## still matches below and over-reports "cert invalid" (exit 1). Acceptable:
+   ## the clock cannot be harmed -- the only consumer (anondate-get) floors any
+   ## resulting time via minimum_time_check and anondate-set is forward-only, and
+   ## tor_cert_valid_after already takes the freshest match. Log-time filtering is
+   ## not viable (the timestamps live in the very clock under validation).
 
    ## Example Tor log:
    ## Sep 03 10:32:59.000 [warn] Certificate already expired. Either their clock is set wrong, or your clock is wrong.

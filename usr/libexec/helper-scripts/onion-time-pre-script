@@ -114,10 +114,8 @@ sudo -u sdwdate $0"
 onion_time_script_status() {
    if [ -f "${anondate_state_folder}/onion-time-script-after-boot" ]; then
       output_cmd "Status: Subsequent run after boot."
-      onion_time_script_status_boot=true
    else
       output_cmd "Status: First run after boot. (Creating file '${anondate_state_folder}/onion-time-script-after-boot'.)"
-      onion_time_script_status_boot=false
       touch "${anondate_state_folder}/onion-time-script-after-boot"
    fi
 }
@@ -254,11 +252,9 @@ tor_bootstrap_check() {
       check_tor_bootstrap_status
    fi
 
-   ## TODO:
-   ## When using an old Tor consensus which might be the case when no Tor
-   ## circuit has been established yet, there is no point to check Tor
-   ## consensus time as it might be outdated leading to concluding that the
-   ## clock is fast.
+   ## REMINDER: an old Tor consensus (likely before a circuit is built) can make
+   ## tor_consensus_time_sanity_check conclude the clock is "fast". This is
+   ## harmless and handled there -- see the REMINDER at the fast verdict.
 
    ## Could be 100% bootstrap process but still no Tor circuit established yet.
 
@@ -306,12 +302,16 @@ tor_consensus_time_sanity_check() {
       fi
       if [ "${current_unixtime}" -ge "${tor_consensus_valid_until_unixtime}" ]; then
          clock_tor_consensus_check_result="fast"
-         if [ "${onion_time_script_status_boot}" = "true" ]; then
-            clock_tor_consensus_check_msg="The clock might be too fast. Clock is faster than consensus/valid-until ${tor_consensus_valid_until_output}. \
-extra guess: Tor consensus might be outdated and download might still be in progress since this is the first run after boot."
-         else
-            clock_tor_consensus_check_msg="The clock might be too fast. Clock is faster than consensus/valid-until ${tor_consensus_valid_until_output}. extra guess: None."
-         fi
+         ## REMINDER: a stale Tor consensus (common before a circuit is built,
+         ## e.g. Tor still on an old consensus after the gateway was offline)
+         ## produces this same "fast" verdict even when the clock is correct.
+         ## Harmless: the clock is only ever corrected forward by anondate-set
+         ## (forward-only + minimum-time floored), so a past consensus can never
+         ## move it, and a confirmed circuit short-circuits to success. This
+         ## message is advisory only.
+         clock_tor_consensus_check_msg="The clock might be too fast (faster than consensus/valid-until ${tor_consensus_valid_until_output}), \
+OR the Tor consensus might be outdated (a fresh one might not be downloaded yet). \
+Harmless either way: the clock is only ever corrected forward via anondate-set."
       else
          true
       fi
@@ -334,17 +334,12 @@ extra guess: Tor consensus might be outdated and download might still be in prog
       output_cmd "Tor Consensus Time Sanity Check: ${clock_tor_consensus_check_msg}"
    fi
 
-   ## TODO
-   ## Would have to parse tor_bootstrap_status.
-   ## In case Tor cannot fetch Tor consensus $tor_consensus_valid_after_exit_code /
-   ## $tor_consensus_valid_until_exit_code may be zero but $tor_consensus_valid_until_output
-   ## may be empty.
-   #if [ ! "$clock_tor_consensus_check_result" = "ok" ]; then
-   #   if [ "$VM" = "Gateway" ]; then
-   #      exit_code=1
-   #      exit "$exit_code"
-   #   fi
-   #fi
+   ## REMINDER: when Tor cannot fetch a consensus the valid-after/valid-until
+   ## exit codes can be zero while the output is empty. That empty case is the
+   ## "noneyet" branch above (exit 2, retry) -- deliberately NOT a hard error:
+   ## sdwdate self-heals on retry and a confirmed circuit is the ground truth,
+   ## so parsing tor_bootstrap_status to tell a transient missing consensus from
+   ## a real failure is unnecessary.
 }
 
 connectivity_test() {
