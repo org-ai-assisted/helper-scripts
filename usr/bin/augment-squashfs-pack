@@ -50,10 +50,12 @@ error() {
    exit 1
 }
 
-## Translate a limited set of octal escapes into the characters they represent.
-## This may not be sufficient for all edge cases.
-##
-## TODO: Can we replace this with a call to `printf '%b'`?
+## Translate the four octal escapes the kernel's mountinfo mangler emits
+## (space, tab, newline, backslash) into the characters they represent. These
+## are the only sequences the kernel produces, so this decode is complete.
+## Not 'printf %b': it would interpret every backslash sequence appearing in a
+## path (\x.., \u.., \a, ...), broadening decoding on attacker-influenceable
+## mount paths, and \134 is not a clean \0ooo form. Explicit decode is safer.
 mountinfo_unescape() {
    local value
    value="$1"
@@ -228,13 +230,8 @@ if ! mksquashfs "${pack_root}" "${output_squashfs}" \
 then
    ## Drop any partial image to avoid causing Calamares problems.
    safe-rm --force -- "${output_squashfs}"
-   if [ -n "${from_overlay}" ]; then
-      ## Don't crash the install by exiting 1 here
-      ##
-      ## TODO: Arguably we should crash the install here though...
-      printf '%s\n' "${me}: WARNING: mksquashfs failed" >&2
-      exit 0
-   fi
+   ## A failed augment is install-critical: abort rather than ship a
+   ## silently-incomplete system (applies to overlay mode too).
    error "mksquashfs failed"
 fi
 
